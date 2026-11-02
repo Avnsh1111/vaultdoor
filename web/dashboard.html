@@ -354,7 +354,7 @@ function orbit(){
     ${st&&(r.s==='needs-auth'||r.s==='failed')?`<circle class="ping" cx="${x+25}" cy="${y-25}" r="7" fill="${st[0]}"/><circle cx="${x+25}" cy="${y-25}" r="7" fill="${st[0]}" stroke="#0b0e1a" stroke-width="2"/>`:''}
     <text x="${x}" y="${y+53}" text-anchor="middle" font-size="13" font-weight="600" style="fill:${on?'#eef1ff':'#7079a0'}">${esc(short(r.n,16))}</text></g></g></g>`}).join('');
   const name=proj().name,fs=name.length>12?16:21;
-  return rail()+`<div class="scroller"><svg class="canvas" id="orbitSvg" viewBox="0 0 ${W} ${H}" style="${R.length>14?'':'height:100%'}"><defs><radialGradient id="corefill"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".62"/></radialGradient></defs>
+  return rail()+`<div class="scroller"><svg class="canvas" id="orbitSvg" viewBox="0 0 ${W} ${H}" style="height:100%"><defs><radialGradient id="corefill"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".62"/></radialGradient></defs>
     <circle cx="${cx}" cy="${cy}" r="150" fill="none" stroke="#2a3152" stroke-dasharray="3 7"/>
     <g style="transform-origin:${cx}px ${cy}px;transform:rotate(var(--a,0deg))"><circle cx="${cx}" cy="${cy}" r="${rad}" fill="none" stroke="#3a4270" stroke-dasharray="3 7"/>${lines}${dots}</g>
     <circle class="ripple" cx="${cx}" cy="${cy}" r="96" stroke="${c}" style="animation-delay:var(--t,0s)"/><circle class="ripple" cx="${cx}" cy="${cy}" r="96" stroke="${c}" style="animation-delay:calc(var(--t,0s) - 1.7s)"/>
