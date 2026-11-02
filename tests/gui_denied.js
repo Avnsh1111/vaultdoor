@@ -3,6 +3,7 @@ const out = {};
 const check = (name, value, detail) => { out[name] = value ? true : (detail === undefined ? false : detail); };
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const stage = document.getElementById('stage');
+for (let i = 0; i < 100 && !document.querySelector('[data-retry]'); i++) await wait(100);
 check('the page says the vault could not open', stage.innerText.includes('could not open'), stage.innerText.slice(0, 120));
 check('the header is still there', document.querySelector('header').innerText.includes('Settings'));
 check('it offers a retry', !!document.querySelector('[data-retry]'));

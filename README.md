@@ -81,7 +81,7 @@ No command prints a stored value, adds a key or changes a setting. Every change 
 
 ## Features
 
-**Auto deployment.** Click **Auto deploy**, optionally say what a deploy should do, and an AI studies the project and writes a script for its servers, with a `--dry-run` mode. It has no access to your secrets while it works, and can change only that one file.
+**Auto deployment.** Click **Auto deploy**, optionally say what a deploy should do, and an AI studies the project and writes a script for its servers, with a `--dry-run` mode. It has no access to your vault while it works, and can change only that one file.
 
 ![Reviewing a generated deploy script](docs/review.png)
 

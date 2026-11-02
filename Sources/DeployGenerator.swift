@@ -378,7 +378,7 @@ final class GeneratorJob {
             locked { failure = "No AI tool was found on this Mac." }
             return
         }
-        addLog("Starting the AI, with no access to your secrets")
+        addLog("Starting the AI, with no access to your vault")
         let before = snapshot(of: projectPath)
 
         var environment = cleanEnvironment(path: loginPath)

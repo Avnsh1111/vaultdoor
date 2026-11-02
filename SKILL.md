@@ -104,7 +104,7 @@ To open the dashboard for the user, run `vaultdoor dashboard`, then say exactly 
 | Add another password or token | Click **+ Add key** |
 | Change a saved password | **Settings > Servers > Replace login**, or **Settings > Keys > Replace** |
 | Point a project at a server | Click the server's hexagon and enter the folder |
-| Get a deploy script | Click **Auto deploy**. The AI writes it with no access to secrets, and it can't run until they read and approve it |
+| Get a deploy script | Click **Auto deploy**. The AI writes it with no access to the vault, and it can't run until they read and approve it |
 | Move to a new Mac | **Settings > New Mac > Export**, then Import on the new Mac |
 
 A saved value can never be shown again, even in the dashboard, so they should keep their own copy if they might need it elsewhere.
