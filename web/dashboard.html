@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VaultDoor</title>
+<style>
+  :root { --bg:#0b0e1a; --panel:#151a2e; --panel2:#1c2240; --line:#2a3152; --txt:#eef1ff; --mut:#98a0c4; --ok:#2fd27c; --warn:#ffb020; --bad:#ff5a5f; --accent:#8b6cff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { height:100%; }
+  body { background:var(--bg); color:var(--txt); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+  button { font:inherit; }
+
+  .aurora { position:fixed; border-radius:50%; filter:blur(90px); pointer-events:none; z-index:0; will-change:transform; }
+  .aurora.a1 { width:720px; height:520px; top:-200px; right:6%; background:#3a2c8c; opacity:.75; animation:drift1 19s ease-in-out infinite alternate; }
+  .aurora.a2 { width:640px; height:480px; bottom:-220px; left:-120px; background:#0f4a68; opacity:.7; animation:drift2 23s ease-in-out infinite alternate; }
+  .aurora.a3 { width:420px; height:360px; top:32%; left:38%; background:#5a2470; opacity:.22; animation:drift3 29s ease-in-out infinite alternate; }
+  @keyframes drift1 { to { transform:translate(-220px,110px) scale(1.2); } }
+  @keyframes drift2 { to { transform:translate(260px,-90px) scale(1.15); } }
+  @keyframes drift3 { to { transform:translate(-160px,-80px) scale(1.3); } }
+  header, main, footer { position:relative; z-index:1; }
+
+  header { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:16px; padding:12px 22px; border-bottom:1px solid var(--line); background:rgba(13,16,32,.55); backdrop-filter:blur(10px); }
+  .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; }
+  .brand i { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; background:linear-gradient(135deg,#8b6cff,#22b8cf); background-size:200% 200%; animation:logoShift 6s ease-in-out infinite alternate; }
+  @keyframes logoShift { from { background-position:0% 0%; } to { background-position:100% 100%; box-shadow:0 0 18px 2px rgba(139,108,255,.55); } }
+  .seg { position:relative; display:flex; gap:4px; padding:4px; background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+  .seg button { position:relative; z-index:1; font-size:14px; font-weight:600; color:var(--mut); background:none; border:0; padding:8px 16px; border-radius:9px; cursor:pointer; transition:color .25s; white-space:nowrap; }
+  .seg button.on { color:#fff; }
+  #thumb { position:absolute; top:4px; bottom:4px; left:4px; width:0; border-radius:9px; background:linear-gradient(135deg,#8b6cff,#5b7cff); box-shadow:0 6px 18px -6px #8b6cff; transition:left .34s cubic-bezier(.3,1.3,.5,1), width .34s cubic-bezier(.3,1.3,.5,1); }
+  .tools { justify-self:end; display:flex; gap:8px; align-items:center; }
+  .chip { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--txt); background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:8px 12px; cursor:pointer; transition:transform .15s, border-color .15s; white-space:nowrap; }
+  .chip:hover { transform:translateY(-2px); border-color:var(--accent); }
+  .chip.open { border-color:var(--ok); color:var(--ok); }
+  .chip.busy { border-color:var(--accent); animation:busyGlow 1.6s ease-in-out infinite; }
+  .chip.ready { border-color:var(--ok); color:var(--ok); }
+  @keyframes busyGlow { 50% { box-shadow:0 0 16px 1px rgba(139,108,255,.6); } }
+
+  main { flex:1; min-height:0; padding:14px 22px 6px; display:flex; }
+  #stage { flex:1; min-width:0; display:flex; gap:16px; }
+  footer { padding:8px 22px 12px; color:var(--mut); font-size:12.5px; text-align:center; }
+  svg.canvas { width:100%; height:100%; display:block; flex:1; min-width:0; overflow:visible; }
+  .scroller { flex:1; min-width:0; overflow:auto; }
+  .scroller svg.canvas { height:auto; }
+  svg text { font-family:inherit; fill:var(--txt); }
+  [data-p], [data-r], [data-add] { cursor:pointer; }
+
+  @keyframes rise { from { opacity:0; transform:translateY(16px) scale(.94); } }
+  @keyframes popin { 0% { opacity:0; transform:scale(.3); } 70% { opacity:1; transform:scale(1.1); } 100% { transform:scale(1); } }
+  .svgb { transform-box:fill-box; transform-origin:center; }
+  #stage.enter .in { animation:rise .55s cubic-bezier(.2,.8,.2,1) backwards; animation-delay:calc(var(--i,0) * 32ms); }
+  #stage.enter .pin { animation:popin .55s cubic-bezier(.2,.8,.2,1) backwards; animation-delay:calc(var(--i,0) * 32ms); }
+
+  .ln { fill:none; stroke-width:1.5; opacity:.16; }
+  .ln.on { stroke-width:2.6; opacity:.62; }
+  .ln.draw { stroke-dasharray:1; stroke-dashoffset:1; animation:draw .7s ease-out forwards; animation-delay:calc(var(--i,0) * 70ms); }
+  .ln.gone { stroke-dasharray:1; animation:undraw .5s ease-in forwards; }
+  @keyframes draw { to { stroke-dashoffset:0; } }
+  @keyframes undraw { from { stroke-dashoffset:0; opacity:.9; } to { stroke-dashoffset:-1; opacity:0; } }
+
+  .hov { transform-box:fill-box; transform-origin:center; transition:transform .18s cubic-bezier(.3,1.5,.5,1); }
+  .hov:hover { transform:scale(1.07); }
+  .dim { opacity:.38; transition:opacity .2s; }
+  .dim:hover { opacity:.8; }
+  .pop { animation:pop .5s cubic-bezier(.3,1.6,.5,1); transform-box:fill-box; transform-origin:center; }
+  @keyframes pop { 0% { transform:scale(.8); } 45% { transform:scale(1.2); } 100% { transform:scale(1); } }
+  .burst { fill:none; stroke-width:3; transform-box:fill-box; transform-origin:center; animation:burst .75s ease-out forwards; pointer-events:none; }
+  @keyframes burst { from { transform:scale(.8); opacity:.95; } to { transform:scale(2.3); opacity:0; } }
+  .ping { transform-box:fill-box; transform-origin:center; animation:ping 1.7s ease-out infinite; animation-delay:var(--t,0s); pointer-events:none; }
+  @keyframes ping { 0% { transform:scale(1); opacity:.8; } 100% { transform:scale(3.1); opacity:0; } }
+  .halo { transform-box:fill-box; transform-origin:center; animation:breathe 2.8s ease-in-out infinite; animation-delay:var(--t,0s); pointer-events:none; }
+  @keyframes breathe { 0%,100% { transform:scale(1); opacity:.2; } 50% { transform:scale(1.05,1.17); opacity:.5; } }
+  .twinkle { animation:twinkle 2.6s ease-in-out infinite; animation-delay:calc(var(--t,0s) + var(--i,0) * -.45s); }
+  @keyframes twinkle { 0%,100% { opacity:.45; } 50% { opacity:1; } }
+  .ripple { fill:none; stroke-width:2; transform-box:fill-box; transform-origin:center; animation:ripple 3.4s ease-out infinite; pointer-events:none; }
+  @keyframes ripple { from { transform:scale(.8); opacity:.75; } to { transform:scale(2.15); opacity:0; } }
+  .core { transform-box:fill-box; transform-origin:center; animation:core 3.4s ease-in-out infinite; animation-delay:var(--t,0s); }
+  @keyframes core { 0%,100% { transform:scale(1); } 50% { transform:scale(1.045); } }
+
+  .rail { width:220px; flex-shrink:0; display:flex; flex-direction:column; gap:10px; overflow:auto; padding:2px; }
+  .rail button { color:var(--txt); text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 14px; cursor:pointer; display:block; width:100%; position:relative; overflow:hidden; flex-shrink:0; transition:transform .18s cubic-bezier(.3,1.5,.5,1), border-color .2s, box-shadow .25s, background .2s; }
+  .rail button:hover { transform:translateX(5px); border-color:var(--pc); }
+  .rail button::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--pc); transform:scaleY(0); transition:transform .28s cubic-bezier(.3,1.3,.5,1); }
+  .rail button.on::before { transform:scaleY(1); }
+  .rail button b { display:block; font-size:14px; word-break:break-word; }
+  .rail button small { color:var(--mut); font-size:12px; }
+  .rail button.on { border-color:var(--pc); box-shadow:0 0 0 1px var(--pc), 0 8px 26px -8px var(--pc); background:var(--panel2); }
+  .rail .add { --pc:var(--accent); border-style:dashed; color:var(--mut); font-size:13px; font-weight:600; text-align:center; }
+  .warn-dot { position:absolute; top:12px; right:12px; width:9px; height:9px; border-radius:50%; background:var(--warn); }
+  .warn-dot::after { content:''; position:absolute; inset:0; border-radius:50%; background:inherit; animation:ping 1.7s ease-out infinite; }
+
+  .wall { flex:1; min-width:0; overflow:auto; padding:4px 6px 6px 2px; }
+  .cap { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--mut); margin:2px 0 12px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:16px; margin-bottom:24px; }
+  .cell { cursor:pointer; transition:transform .2s cubic-bezier(.3,1.5,.5,1); }
+  .cell:hover { transform:translateY(-5px) scale(1.05); }
+  .cell:active { transform:scale(.97); }
+  .tile { position:relative; overflow:hidden; aspect-ratio:1; border-radius:24px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:8px; text-align:center; background:linear-gradient(145deg,var(--c),color-mix(in srgb,var(--c) 55%,#000)); box-shadow:0 16px 32px -14px var(--c); animation:bob 5.2s ease-in-out infinite, tileGlow 5.2s ease-in-out infinite; animation-delay:calc(var(--t,0s) + var(--i,0) * -.74s); }
+  @keyframes bob { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+  @keyframes tileGlow { 0%,100% { box-shadow:0 14px 26px -16px var(--c); } 50% { box-shadow:0 22px 40px -12px var(--c); } }
+  .tile::after { content:''; position:absolute; top:-30%; bottom:-30%; width:42%; left:-70%; background:linear-gradient(100deg,transparent,rgba(255,255,255,.3),transparent); transform:skewX(-14deg); animation:sheen 6.4s ease-in-out infinite; animation-delay:calc(var(--t,0s) + var(--i,0) * -.91s); pointer-events:none; }
+  @keyframes sheen { 0%,62% { left:-70%; } 100% { left:135%; } }
+  .tile.off { background:var(--panel); box-shadow:none; border:1px dashed var(--line); animation:none; }
+  .tile.off::after { display:none; }
+  .tile.off svg { opacity:.45; }
+  .cell:hover .tile.off { border-color:var(--c); }
+  .cell:hover .tile.off svg { opacity:.85; }
+  .tile b { font-size:15px; }
+  .tile.off b { color:var(--mut); }
+  .tile small { font-size:11.5px; opacity:.9; }
+  .tile.flash { animation:bob 5.2s ease-in-out infinite, flash .85s ease-out; }
+  @keyframes flash { 0% { box-shadow:0 0 0 0 var(--c); filter:brightness(1.5); } 100% { box-shadow:0 0 0 30px transparent; filter:brightness(1); } }
+  .badge { position:absolute; top:10px; right:10px; width:24px; height:24px; border-radius:50%; background:#fff; display:grid; place-items:center; z-index:2; }
+  .badge.new { animation:popin .5s cubic-bezier(.3,1.6,.5,1); }
+  .sdot { position:absolute; top:13px; left:13px; width:11px; height:11px; border-radius:50%; border:2px solid rgba(0,0,0,.35); z-index:2; }
+  .sdot.alert::after { content:''; position:absolute; inset:-2px; border-radius:50%; background:inherit; animation:ping 1.7s ease-out infinite; animation-delay:var(--t,0s); }
+
+  .ring { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:12px; }
+  .kc { cursor:pointer; display:flex; gap:12px; align-items:center; padding:13px; border-radius:16px; background:linear-gradient(135deg,#3a2f7a,#1f2a5e); border:1px solid #5a4fb0; transition:transform .2s cubic-bezier(.3,1.5,.5,1), box-shadow .2s; min-width:0; }
+  .kc > div:last-child { min-width:0; }
+  .kc:hover { transform:translateY(-4px); box-shadow:0 14px 28px -12px #8b6cff; }
+  .kc:active { transform:scale(.97); }
+  .kc.off { background:var(--panel); border:1px dashed var(--line); }
+  .kc.off .ki { opacity:.5; }
+  .ki { width:42px; height:42px; flex-shrink:0; border-radius:12px; display:grid; place-items:center; background:rgba(255,255,255,.12); }
+  .kc:not(.off) .ki svg { transform-origin:30% 30%; animation:swing 3.6s ease-in-out infinite; animation-delay:calc(var(--t,0s) + var(--i,0) * -.6s); }
+  @keyframes swing { 0%,70%,100% { transform:rotate(0); } 78% { transform:rotate(16deg); } 86% { transform:rotate(-11deg); } 93% { transform:rotate(6deg); } }
+  .kc.pop .ki { animation:popin .5s cubic-bezier(.3,1.6,.5,1); }
+  .kc.srv:not(.off) { background:linear-gradient(135deg,#0d5f63,#123a52); border-color:#1fa7a7; }
+  .kc .folder { font-size:12px; color:#7fe0d8; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kc b { display:block; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kc code { display:block; font:11px ui-monospace,Menlo,monospace; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .dots { font-size:13px; letter-spacing:.12em; background:linear-gradient(90deg,#7a82b8 0%,#7a82b8 35%,#fff 50%,#7a82b8 65%,#7a82b8 100%); background-size:260% 100%; -webkit-background-clip:text; background-clip:text; color:transparent; animation:shim 3.4s linear infinite; animation-delay:calc(var(--t,0s) + var(--i,0) * -.5s); }
+  @keyframes shim { from { background-position:130% 0; } to { background-position:-130% 0; } }
+
+  .hx { transform-box:fill-box; transform-origin:center; }
+  #stage.wave .hx { animation:hxWave .7s ease-out; animation-delay:calc(var(--d,0) * 1ms); }
+  @keyframes hxWave { 0%,100% { transform:scale(1); filter:brightness(1); } 35% { transform:scale(1.1); filter:brightness(1.55); } }
+  .decor { fill:rgba(255,255,255,.015); stroke:#2a3152; stroke-width:1; stroke-linejoin:round; animation:decorTw 8s ease-in-out infinite; animation-delay:calc(var(--t,0s) + var(--k,0) * -1s); pointer-events:none; }
+  @keyframes decorTw { 0%,100% { opacity:.3; } 50% { opacity:.85; } }
+  #stage.wave .decor { animation:decorFlash .8s ease-out; animation-delay:calc(var(--d,0) * 1ms); }
+  @keyframes decorFlash { 0%,100% { stroke:#2a3152; opacity:.45; } 30% { stroke:var(--pc); opacity:1; } }
+  .doorGlow { transform-box:fill-box; transform-origin:center; animation:doorGlow 3.6s ease-in-out infinite; animation-delay:var(--t,0s); pointer-events:none; }
+  @keyframes doorGlow { 0%,100% { transform:scale(1); opacity:.16; } 50% { transform:scale(1.05); opacity:.44; } }
+  .wheel.spin { animation:wheelSpin 1.15s cubic-bezier(.25,1.2,.4,1); }
+  .wheel.nudge { animation:wheelNudge .65s cubic-bezier(.3,1.5,.5,1); }
+  @keyframes wheelSpin { from { transform:rotate(-320deg); } to { transform:rotate(0); } }
+  @keyframes wheelNudge { from { transform:rotate(-42deg); } to { transform:rotate(0); } }
+  .arc.fill { animation:arcIn 1.1s ease-out; }
+  @keyframes arcIn { from { stroke-dasharray:0 1; } }
+  .beam { fill:none; stroke-width:4; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:1; animation:beam .95s ease-out forwards; pointer-events:none; }
+  @keyframes beam { 0% { stroke-dashoffset:1; opacity:1; } 55% { stroke-dashoffset:0; opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
+  .feedIn { animation:feedIn .5s ease-out; }
+  @keyframes feedIn { from { opacity:0; } }
+
+  #toast { position:fixed; left:50%; bottom:44px; z-index:30; display:flex; align-items:center; gap:9px; padding:10px 17px; border-radius:99px; font-size:14px; font-weight:600; background:rgba(28,34,64,.95); border:1px solid var(--line); backdrop-filter:blur(8px); box-shadow:0 14px 34px -10px #000; transform:translate(-50%,26px) scale(.94); opacity:0; pointer-events:none; transition:transform .34s cubic-bezier(.3,1.4,.5,1), opacity .25s; max-width:80vw; }
+  #toast.show { transform:translate(-50%,0) scale(1); opacity:1; }
+  #toast em { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+  .empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; }
+  .empty h2 { font-size:24px; }
+  .empty p { color:var(--mut); max-width:520px; line-height:1.5; }
+  .sugs { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; max-width:640px; }
+  .btn { font-size:14px; font-weight:700; color:#fff; background:linear-gradient(135deg,#8b6cff,#5b7cff); border:0; border-radius:10px; padding:9px 16px; cursor:pointer; transition:transform .15s; }
+  .btn:hover { transform:translateY(-2px); }
+  .btn.quiet { background:var(--panel2); border:1px solid var(--line); font-weight:600; }
+  .btn.danger { background:none; border:1px solid var(--line); color:var(--bad); font-weight:600; }
+  .btn.small { font-size:12.5px; padding:6px 10px; }
+
+  #scrim { position:fixed; inset:0; background:rgba(4,6,14,.55); z-index:10; opacity:0; pointer-events:none; transition:opacity .25s; }
+  #scrim.show { opacity:1; pointer-events:auto; }
+  #drawer { position:fixed; top:0; right:0; bottom:0; width:min(560px,92vw); z-index:11; background:#10142a; border-left:1px solid var(--line); transform:translateX(102%); transition:transform .36s cubic-bezier(.2,.9,.3,1); display:flex; flex-direction:column; }
+  #drawer.show { transform:none; }
+  .dhead { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 10px; }
+  .dhead h2 { font-size:18px; }
+  .dtabs { display:flex; gap:6px; padding:0 20px 12px; border-bottom:1px solid var(--line); }
+  .dtabs button { font-size:13px; font-weight:600; color:var(--mut); background:none; border:0; padding:6px 10px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  details.vars { margin:2px 0 8px; }
+  details.vars summary { font-size:13px; font-weight:600; color:var(--mut); cursor:pointer; margin-bottom:10px; }
+  .dtabs button.on { background:var(--panel2); color:#fff; }
+  #dbody { flex:1; overflow:auto; padding:16px 20px 24px; }
+  .row { display:flex; align-items:center; gap:10px; padding:11px 12px; background:var(--panel); border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
+  .row > .grow { flex:1; min-width:0; }
+  .row b { display:block; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row small { display:block; color:var(--mut); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .row .ops { display:flex; gap:6px; flex-shrink:0; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:99px; border:1px solid currentColor; white-space:nowrap; }
+  .pill.ok { color:var(--ok); } .pill.warn { color:var(--warn); } .pill.bad { color:var(--bad); }
+  .note { color:var(--mut); font-size:13px; line-height:1.55; margin-bottom:14px; }
+  .note b { color:var(--txt); }
+  .sect { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--mut); margin:16px 0 10px; }
+
+  #modal { position:fixed; left:50%; top:50%; width:min(460px,92vw); max-height:86vh; overflow:auto; z-index:21; background:#141934; border:1px solid var(--line); border-radius:16px; padding:20px; transform:translate(-50%,-46%) scale(.96); opacity:0; pointer-events:none; transition:transform .25s cubic-bezier(.3,1.3,.5,1), opacity .2s; box-shadow:0 30px 70px -20px #000; }
+  #modal.show { transform:translate(-50%,-50%); opacity:1; pointer-events:auto; }
+  #mscrim { position:fixed; inset:0; background:rgba(4,6,14,.5); z-index:20; display:none; }
+  #mscrim.show { display:block; }
+  #modal.wide { width:min(880px,94vw); max-height:90vh; }
+  #modal h3 { font-size:17px; margin-bottom:12px; }
+  label.f textarea { display:block; width:100%; min-height:72px; resize:vertical; margin-top:5px; font:14px -apple-system,system-ui,sans-serif; color:var(--txt); background:#0d1124; border:1px solid var(--line); border-radius:8px; padding:8px 10px; outline:none; }
+  label.f textarea:focus { border-color:var(--accent); }
+  .btn:disabled { opacity:.45; cursor:default; transform:none; }
+  .gen-wait { display:flex; align-items:center; gap:14px; margin:6px 0 14px; }
+  .gen-wheel { width:44px; height:44px; flex-shrink:0; border-radius:50%; border:4px solid var(--line); border-top-color:var(--accent); border-right-color:#22b8cf; animation:genSpin 1s linear infinite; }
+  @keyframes genSpin { to { transform:rotate(360deg); } }
+  .gen-log { background:#0d1124; border:1px solid var(--line); border-radius:10px; padding:10px 12px; min-height:150px; font:12.5px ui-monospace,Menlo,monospace; color:var(--mut); line-height:1.7; overflow:hidden; }
+  .gen-log div:last-child { color:var(--txt); }
+  .code { background:#0a0d1c; border:1px solid var(--line); border-radius:10px; max-height:42vh; overflow:auto; font:12.5px/1.55 ui-monospace,Menlo,monospace; margin:10px 0 14px; }
+  .code div { display:flex; white-space:pre; }
+  .code i { font-style:normal; color:#59618a; text-align:right; width:42px; flex-shrink:0; padding-right:10px; user-select:none; }
+  .code span { padding-right:12px; }
+  .code .hit-danger { background:rgba(255,90,95,.16); }
+  .code .hit-warning { background:rgba(255,176,32,.13); }
+  .finding { display:flex; gap:8px; align-items:baseline; font-size:13px; padding:5px 0; border-bottom:1px solid var(--line); }
+  .finding b { flex-shrink:0; font-size:11px; }
+  .finding.danger b { color:var(--bad); } .finding.warning b { color:var(--warn); }
+  .ai-note { white-space:pre-wrap; font-size:13px; line-height:1.5; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  label.f { display:block; font-size:12.5px; font-weight:600; color:var(--mut); margin-bottom:11px; }
+  label.f input, label.f select { display:block; width:100%; margin-top:5px; font:14px -apple-system,system-ui,sans-serif; color:var(--txt); background:#0d1124; border:1px solid var(--line); border-radius:8px; padding:8px 10px; outline:none; }
+  label.f input:focus, label.f select:focus { border-color:var(--accent); }
+  .mfoot { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+  .check { display:flex; gap:10px; align-items:center; padding:7px 2px; font-size:13.5px; border-bottom:1px solid var(--line); }
+  .check code { font:12.5px ui-monospace,Menlo,monospace; }
+  .check small { color:var(--mut); margin-left:auto; font-size:11.5px; }
+  #preview { display:none; position:fixed; left:12px; bottom:12px; z-index:40; font-size:12px; font-weight:700; color:#07140d; background:var(--warn); padding:5px 10px; border-radius:8px; }
+
+  @media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } .ln.draw { stroke-dashoffset:0; } }
+</style>
+</head>
+<body>
+<div class="aurora a1"></div><div class="aurora a2"></div><div class="aurora a3"></div>
+<header>
+  <div class="brand"><i id="logo"></i>VaultDoor</div>
+  <div class="seg" id="seg">
+    <span id="thumb"></span>
+    <button data-v="vault">Vault door</button>
+    <button data-v="map">Connection map</button>
+    <button data-v="orbit">Orbit</button>
+    <button data-v="wall">App wall</button>
+  </div>
+  <div class="tools">
+    <button class="chip" id="auto"></button>
+    <button class="chip" id="lock"></button>
+    <button class="chip" id="settings"></button>
+  </div>
+</header>
+<main><div id="stage"></div></main>
+<div id="toast"><em></em><span></span></div>
+<footer id="hint"></footer>
+<div id="scrim"></div>
+<aside id="drawer" aria-label="Settings">
+  <div class="dhead"><h2>Settings</h2><button class="btn quiet small" data-do="closeDrawer">Close</button></div>
+  <div class="dtabs" id="dtabs"></div>
+  <div id="dbody"></div>
+</aside>
+<div id="mscrim"></div>
+<div id="modal" role="dialog"></div>
+<div id="preview">Preview: sample data, not connected to a vault</div>
+
+<script>
+const I={spark:'<path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z"/><path d="M19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z"/>',server:'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/>',chat:'<path d="M4 5h16v11H9l-5 4z"/>',mail:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 7l9 7 9-7"/>',jira:'<path d="M12 3l9 9-9 9-9-9z"/><path d="M12 9l3 3-3 3-3-3z"/>',hash:'<path d="M9 4L7 20M17 4l-2 16M4 9h17M3 15h17"/>',git:'<circle cx="7" cy="6" r="2.5"/><circle cx="7" cy="18" r="2.5"/><circle cx="17" cy="8" r="2.5"/><path d="M7 8.5v7M17 10.5c0 4-10 2-10 5"/>',cal:'<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',drive:'<path d="M9 4h6l6 11-3 5H6l-3-5z"/><path d="M9 4l6 11H3M15 4L6 20"/>',key:'<circle cx="8" cy="8" r="4.5"/><path d="M11.5 11.5L20 20M16 16l2.5-2.5M19 19l2-2"/>',lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',unlock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',check:'<path d="M5 12l5 5 9-10"/>',plus:'<path d="M12 5v14M5 12h14"/>',globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',plug:'<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>',doc:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',pen:'<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M14 6l4 4"/>',card:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>',gear:'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>'};
+const icon=(n,s=24,col='#fff',x,y)=>`<svg ${x!==undefined?`x="${x}" y="${y}"`:''} width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[n]||I.plug}</svg>`;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const motion=!matchMedia('(prefers-reduced-motion:reduce)').matches;
+const PAL=['#8b6cff','#ff7a59','#19c37d','#f5b301','#22b8cf','#e05aa6','#5b9dff','#a3d139'];
+const ST={connected:['#2fd27c','Connected'],'needs-auth':['#ffb020','Needs sign-in'],failed:['#ff5a5f','Login error'],unknown:['#98a0c4','Not checked']};
+const LOOKS=[[/gmail/,'#ea4335','mail'],[/whatsapp/,'#1fb95a','chat'],[/jira|atlassian/,'#2684ff','jira'],[/slack/,'#c81e5a','hash'],[/github/,'#6e7a91','git'],[/calendar/,'#3f7ee8','cal'],[/drive/,'#d99a06','drive'],[/google/,'#3f7ee8','mail'],[/figma/,'#a259ff','pen'],[/stripe/,'#635bff','card'],[/chrome|browser|playwright/,'#13a8a8','globe'],[/docs/,'#c9744f','doc'],[/laravel/,'#e0483a','plug'],[/context7/,'#2fa8a0','doc']];
+const KIND={password:'Password or secret',token:'API token'};
+const AUTH={password:'Password',key:'Private key',system:"This Mac's own SSH setup"};
+
+/* ---------- talking to the app ---------- */
+const bridge=window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.vault;
+const call=async(op,args={})=>JSON.parse(bridge?await bridge.postMessage({op,args}):await previewCall(op,args));
+
+let S={projects:[],servers:[],keys:[],apps:[],activity:[],suggested:[],unlocked:false,appsLoading:false};
+let P=[],A=[],K=[],L={},cur=null,view='vault',tab='servers';
+let fx={enter:true,drawAll:true,last:null,ghost:null};
+let lastActivity=null;
+
+const targetOf=s=>(s.user?s.user+'@':'')+s.host+(s.port&&s.port!==22?':'+s.port:'');
+const linksOf=id=>{const p=rawProj();return p?p.links.filter(l=>l.serverID===id):[]};
+const folderText=id=>{const l=linksOf(id);if(!l.length)return 'Not mapped';if(l.length>1)return l.length+' folders';return l[0].path||'Login folder'};
+function look(a){const n=(a.id+' '+a.name).toLowerCase();for(const[re,c,i]of LOOKS)if(re.test(n))return{c,i};let h=0;for(const ch of n)h=(h*31+ch.charCodeAt(0))>>>0;return{c:PAL[h%PAL.length],i:'plug'}}
+function applyState(s){
+  S=s;
+  P=S.projects.map((p,i)=>({id:p.id,name:p.name,c:PAL[i%PAL.length],warn:p.actions.some(a=>a.changed.length)}));
+  A=S.apps.map(a=>({id:a.id,n:a.name,s:a.status,...look(a),t:'app'}));
+  K=[...S.servers.map(s=>({id:s.id,n:s.name,k:targetOf(s),t:'server',i:'server',c:'#0fa3a3',auth:s.auth})),...S.keys.map(k=>({id:k.id,n:k.name,k:k.env,kind:k.kind,t:'key',i:'key',c:'#6a54e0'}))];
+  L={};for(const p of S.projects)L[p.id]=new Set([...p.keyIDs,...p.links.map(l=>l.serverID),...S.apps.filter(a=>!p.disabledApps.includes(a.id)).map(a=>a.id)]);
+  if(!P.some(p=>p.id===cur))cur=P[0]?P[0].id:null;
+  const last=S.activity[S.activity.length-1];if(last)lastActivity=lastActivity||last.time;
+}
+const proj=()=>P.find(p=>p.id===cur);
+const rawProj=()=>S.projects.find(p=>p.id===cur);
+const nameOf=r=>{const x=[...A,...K].find(i=>i.id===r);return x?x.n:r};
+const count=id=>{const p=S.projects.find(x=>x.id===id),k=p.keyIDs.length,s=new Set(p.links.map(l=>l.serverID)).size,a=[...L[id]].length-k-s;return `${a} app${a===1?'':'s'} · ${s} server${s===1?'':'s'} · ${k} key${k===1?'':'s'}`};
+const short=(t,n=13)=>t.length>n?t.slice(0,n-1)+'…':t;
+const curve=(x1,y1,x2,y2)=>{const m=(x1+x2)/2;return `M${x1} ${y1} C${m} ${y1},${m} ${y2},${x2} ${y2}`};
+const dot=(d,c,dur,off,r=3.6)=>motion?`<g opacity="0"><animateMotion dur="${dur}s" begin="${-off}s" repeatCount="indefinite" path="${d}"/><animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.12;.88;1" dur="${dur}s" begin="${-off}s" repeatCount="indefinite"/><circle r="${r*2.5}" fill="${c}" opacity=".28"/><circle r="${r}" fill="#fff"/></g>`:'';
+
+/* ---------- Connection map ---------- */
+function map(){
+  const rows=Math.max(A.length,K.length+2,P.length),step=Math.max(64,Math.min(96,520/Math.max(rows,1))),H=Math.max(650,110+rows*step);
+  const col=(i,n)=>{const total=(n-1)*step;return 60+(H-120-total)/2+i*step};
+  const ay=i=>col(i,A.length),py=i=>col(i,P.length),ky=i=>col(i,K.length+2);
+  const dOf=(pi,r)=>{const ai=A.findIndex(a=>a.id===r),ki=K.findIndex(k=>k.id===r);return ai>=0?curve(450,py(pi),262,ay(ai)):curve(750,py(pi),938,ky(ki))};
+  let bg='',fg='',dots='',n=0;
+  P.forEach((p,i)=>{[...L[p.id]].forEach((r,j)=>{if(A.findIndex(a=>a.id===r)<0&&K.findIndex(k=>k.id===r)<0)return;
+    const d=dOf(i,r),on=p.id===cur;
+    if(on){const dr=fx.drawAll||(fx.last&&fx.last.r===r&&fx.last.on);fg+=`<path pathLength="1" class="ln on ${dr?'draw':''}" style="--i:${n}" stroke="${p.c}" d="${d}"/>`;dots+=dot(d,p.c,2.1,(j*.7)%2.1)+dot(d,p.c,2.1,(j*.7+1.05)%2.1);n++}
+    else bg+=`<path class="ln" stroke="${p.c}" d="${d}"/>`;
+  })});
+  if(fx.ghost){const pi=P.findIndex(p=>p.id===cur);fg+=`<path pathLength="1" class="ln on gone" stroke="${proj().c}" d="${dOf(pi,fx.ghost)}"/>`}
+  const burst=(id,cx,cy,c)=>fx.last&&fx.last.r===id&&fx.last.on?`<circle class="burst" cx="${cx}" cy="${cy}" r="30" stroke="${c}"/>`:'';
+  const apps=A.map((a,i)=>{const on=L[cur].has(a.id),y=ay(i),hit=fx.last&&fx.last.r===a.id,st=ST[a.s]||ST.unknown,attn=a.s==='needs-auth'||a.s==='failed';return `<g class="in svgb" style="--i:${i}"><g data-r="${esc(a.id)}" data-t="app" class="hov ${on?'':'dim'} ${hit?'pop':''}"><title>${esc(a.n)}</title>
+    <rect x="62" y="${y-30}" width="210" height="60" fill="transparent"/>${burst(a.id,88,y,a.c)}
+    <rect x="62" y="${y-24}" width="48" height="48" rx="13" fill="${a.c}"/>${icon(a.i,26,'#fff',73,y-13)}
+    ${attn?`<circle class="ping" cx="108" cy="${y-22}" r="6.5" fill="${st[0]}"/>`:''}<circle cx="108" cy="${y-22}" r="6.5" fill="${st[0]}" stroke="#0b0e1a" stroke-width="2"/>
+    <text x="122" y="${y-2}" font-size="15" font-weight="600">${esc(short(a.n,18))}</text><text x="122" y="${y+16}" font-size="12" style="fill:${attn?st[0]:'#98a0c4'}">${st[1]}</text></g></g>`}).join('');
+  const projs=P.map((p,i)=>{const on=p.id===cur,y=py(i);return `<g class="in svgb" style="--i:${i+2}"><g data-p="${esc(p.id)}" class="hov">
+    ${on?`<rect class="halo" x="444" y="${y-34}" width="312" height="68" rx="24" fill="${p.c}"/>`:''}
+    <rect x="450" y="${y-29}" width="300" height="58" rx="18" fill="${on?p.c:'#151a2e'}" stroke="${p.c}" stroke-width="${on?0:1.5}"/>
+    <text x="600" y="${y-3}" text-anchor="middle" font-size="16" font-weight="700">${esc(short(p.name,30))}</text>
+    <text x="600" y="${y+16}" text-anchor="middle" font-size="12" style="fill:${on?'#fff':'#98a0c4'}">${count(p.id)}</text></g></g>`}).join('');
+  const keys=K.map((k,i)=>{const on=L[cur].has(k.id),y=ky(i),hit=fx.last&&fx.last.r===k.id;return `<g class="in svgb" style="--i:${i+4}"><g data-r="${esc(k.id)}" data-t="${k.t}" class="hov ${on?'':'dim'} ${hit?'pop':''}"><title>${esc(k.n)}</title>
+    <rect x="938" y="${y-30}" width="250" height="60" fill="transparent"/>${burst(k.id,962,y,'#8b6cff')}
+    <rect x="938" y="${y-24}" width="48" height="48" rx="13" fill="${k.t==='server'?k.c:'url(#kg)'}"/>${icon(k.t==='server'?'server':(on?'key':'lock'),26,'#fff',949,y-13)}
+    <text x="998" y="${y-5}" font-size="15" font-weight="600">${esc(short(k.n,22))}</text>
+    <text x="998" y="${y+12}" font-size="11" font-family="ui-monospace,Menlo,monospace" style="fill:#98a0c4">${esc(short(k.k,24))}</text>
+    ${k.t==='server'?`<text style="fill:#7fe0d8" x="998" y="${y+27}" font-size="12">${esc(short(folderText(k.id),26))}</text>`:`<text class="twinkle" style="--i:${i};fill:#c8ccff" x="998" y="${y+27}" font-size="12" letter-spacing="2">••••••••</text>`}</g></g>`}).join('');
+  const addRow=(kind,label,row)=>{const ya=ky(row);return `<g class="in svgb" style="--i:9"><g data-add="${kind}" class="hov"><rect x="938" y="${y0(ya)}" width="48" height="48" rx="13" fill="none" stroke="#5a639c" stroke-dasharray="4 4"/>${icon('plus',24,'#98a0c4',950,ya-12)}<text x="998" y="${ya+5}" font-size="14" font-weight="600" style="fill:#98a0c4">${label}</text></g></g>`};
+  const add=addRow('server','Add server',K.length)+addRow('key','Add key',K.length+1);
+  return `<div class="scroller"><svg class="canvas" viewBox="0 0 1200 ${H}"><defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b6cff"/><stop offset="1" stop-color="#3a4fc4"/></linearGradient></defs>
+    <text x="62" y="26" font-size="12" font-weight="700" letter-spacing="1.5" style="fill:#98a0c4">APPS</text><text x="600" y="26" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.5" style="fill:#98a0c4">PROJECTS</text><text x="938" y="26" font-size="12" font-weight="700" letter-spacing="1.5" style="fill:#98a0c4">SERVERS AND KEYS</text>
+    ${bg}${fg}${dots}${apps}${projs}${keys}${add}</svg></div>`;
+}
+const y0=y=>y-24;
+
+/* ---------- shared project list ---------- */
+function rail(){return `<div class="rail"><div class="cap">Projects</div>`+P.map((p,i)=>`<button data-p="${esc(p.id)}" class="in ${p.id===cur?'on':''}" style="--i:${i};--pc:${p.c}">${p.warn?'<span class="warn-dot" title="A script changed and needs approval"></span>':''}<b>${esc(p.name)}</b><small>${count(p.id)}</small></button>`).join('')+`<button class="add" data-add="project">+ Add project</button></div>`}
+
+/* ---------- Orbit ---------- */
+function orbit(){
+  const R=[...A,...K];
+  const rad=Math.max(236,R.length*25),W=Math.max(1200,2*rad+260),H=2*rad+170,cx=W/2,cy=rad+84,c=proj().c;
+  const pos=R.map((r,i)=>{const t=(-90+i*360/Math.max(R.length,1))*Math.PI/180;return{x:+(cx+rad*Math.cos(t)).toFixed(1),y:+(cy+rad*Math.sin(t)).toFixed(1)}});
+  let lines='',dots='',n=0;
+  R.forEach((r,i)=>{if(!L[cur].has(r.id))return;const d=`M${cx} ${cy} L${pos[i].x} ${pos[i].y}`,dr=fx.drawAll||(fx.last&&fx.last.r===r.id&&fx.last.on);lines+=`<path pathLength="1" class="ln on ${dr?'draw':''}" style="--i:${n}" stroke="${r.c}" d="${d}"/>`;dots+=dot(d,r.c,1.9,(i*.5)%1.9);n++});
+  if(fx.ghost){const gi=R.findIndex(r=>r.id===fx.ghost);if(gi>=0)lines+=`<path pathLength="1" class="ln on gone" stroke="${R[gi].c}" d="M${cx} ${cy} L${pos[gi].x} ${pos[gi].y}"/>`}
+  const nodes=R.map((r,i)=>{const on=L[cur].has(r.id),{x,y}=pos[i],hit=fx.last&&fx.last.r===r.id,st=ST[r.s];return `<g style="transform-origin:${x}px ${y}px;transform:rotate(calc(var(--a,0deg) * -1))"><g class="pin svgb" style="--i:${i}"><g data-r="${esc(r.id)}" data-t="${r.t}" class="hov ${hit?'pop':''}"><title>${esc(r.n)}</title>
+    ${hit&&fx.last.on?`<circle class="burst" cx="${x}" cy="${y}" r="38" stroke="${r.c}"/>`:''}
+    ${on?`<circle class="halo" cx="${x}" cy="${y}" r="44" fill="${r.c}" style="animation-delay:calc(var(--t,0s) + ${-i*.3}s)"/>`:''}
+    <circle cx="${x}" cy="${y}" r="34" fill="${on?r.c:'#151a2e'}" stroke="${on?'#fff':'#2a3152'}" stroke-width="${on?2:1.5}"/>${icon(r.i,30,on?'#fff':'#59618a',x-15,y-15)}
+    ${st&&(r.s==='needs-auth'||r.s==='failed')?`<circle class="ping" cx="${x+25}" cy="${y-25}" r="7" fill="${st[0]}"/><circle cx="${x+25}" cy="${y-25}" r="7" fill="${st[0]}" stroke="#0b0e1a" stroke-width="2"/>`:''}
+    <text x="${x}" y="${y+53}" text-anchor="middle" font-size="13" font-weight="600" style="fill:${on?'#eef1ff':'#7079a0'}">${esc(short(r.n,16))}</text></g></g></g>`}).join('');
+  const name=proj().name,fs=name.length>12?16:21;
+  return rail()+`<div class="scroller"><svg class="canvas" id="orbitSvg" viewBox="0 0 ${W} ${H}" style="${R.length>14?'':'height:100%'}"><defs><radialGradient id="corefill"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".62"/></radialGradient></defs>
+    <circle cx="${cx}" cy="${cy}" r="150" fill="none" stroke="#2a3152" stroke-dasharray="3 7"/>
+    <g style="transform-origin:${cx}px ${cy}px;transform:rotate(var(--a,0deg))"><circle cx="${cx}" cy="${cy}" r="${rad}" fill="none" stroke="#3a4270" stroke-dasharray="3 7"/>${lines}${dots}</g>
+    <circle class="ripple" cx="${cx}" cy="${cy}" r="96" stroke="${c}" style="animation-delay:var(--t,0s)"/><circle class="ripple" cx="${cx}" cy="${cy}" r="96" stroke="${c}" style="animation-delay:calc(var(--t,0s) - 1.7s)"/>
+    <g class="core"><circle cx="${cx}" cy="${cy}" r="118" fill="${c}" opacity=".14"/><circle cx="${cx}" cy="${cy}" r="96" fill="#0b0e1a"/><circle cx="${cx}" cy="${cy}" r="96" fill="url(#corefill)"/>
+      <text x="${cx}" y="${cy-2}" text-anchor="middle" font-size="${fs}" font-weight="800">${esc(short(name,22))}</text><text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="13">${count(cur)}</text></g>
+    <g style="transform-origin:${cx}px ${cy}px;transform:rotate(var(--a,0deg))">${nodes}</g></svg></div>`;
+}
+
+/* ---------- App wall ---------- */
+function wall(){
+  const tiles=A.map((a,i)=>{const on=L[cur].has(a.id),hit=fx.last&&fx.last.r===a.id,st=ST[a.s]||ST.unknown;return `<div class="cell in" data-r="${esc(a.id)}" data-t="app" style="--i:${i}"><div class="tile ${on?'':'off'} ${hit&&on?'flash':''}" style="--c:${a.c};--i:${i}">
+    <span class="sdot ${a.s==='needs-auth'||a.s==='failed'?'alert':''}" style="background:${st[0]}"></span>${on?`<span class="badge ${hit?'new':''}">${icon('check',15,'#0b0e1a')}</span>`:''}${icon(a.i,44)}<b>${esc(short(a.n,18))}</b><small>${st[1]}</small></div></div>`}).join('');
+  const card=(k,i)=>{const on=L[cur].has(k.id),hit=fx.last&&fx.last.r===k.id,isS=k.t==='server';return `<div class="kc in ${on?'':'off'} ${hit?'pop':''} ${isS?'srv':''}" data-r="${esc(k.id)}" data-t="${k.t}" style="--i:${i+4}"><div class="ki">${icon(isS?'server':(on?'key':'lock'),24)}</div><div><b>${esc(k.n)}</b><code>${esc(k.k)}</code>${isS?`<span class="folder">${esc(folderText(k.id))}</span>`:`<span class="dots" style="--i:${i}">••••••••</span>`}</div></div>`};
+  const addCard=(kind,label,i)=>`<div class="kc off in" data-add="${kind}" style="--i:${i}"><div class="ki">${icon('plus',24)}</div><div><b>${label}</b></div></div>`;
+  const srv=K.filter(k=>k.t==='server'),keyList=K.filter(k=>k.t==='key');
+  return rail()+`<div class="wall"><div class="cap">Servers ${esc(proj().name)} is mapped to</div><div class="ring" style="margin-bottom:24px">${srv.map(card).join('')}${addCard('server','Add server',srv.length+4)}</div><div class="cap">Keys ${esc(proj().name)} can use</div><div class="ring" style="margin-bottom:24px">${keyList.map(card).join('')}${addCard('key','Add key',K.length+4)}</div><div class="cap">Apps ${esc(proj().name)} can use</div><div class="tiles">${tiles||'<p class="note">No apps found yet.</p>'}</div></div>`;
+}
+
+/* ---------- Vault door ---------- */
+const hexPts=(x,y,R)=>[...Array(6)].map((_,i)=>{const a=(60*i-90)*Math.PI/180;return `${(x+R*Math.cos(a)).toFixed(1)},${(y+R*Math.sin(a)).toFixed(1)}`}).join(' ');
+const spoke=(cx,cy,p,from,to)=>{const dx=p.x-cx,dy=p.y-cy,l=Math.hypot(dx,dy);return `M${(cx+dx/l*from).toFixed(1)} ${(cy+dy/l*from).toFixed(1)} L${(cx+dx/l*(l-to)).toFixed(1)} ${(cy+dy/l*(l-to)).toFixed(1)}`};
+function layout(nL,nR){
+  const cx=600,cy=290,cells=[];
+  for(let r=-7;r<=7;r++)for(let q=-12;q<=12;q++){const x=cx+(q+r/2)*92,y=cy+r*80;if(x<40||x>1160)continue;const d=Math.hypot(x-cx,y-cy);if(d<205)continue;cells.push({x,y,d})}
+  const pick=(side,n)=>cells.filter(c=>side*(c.x-cx)>0).sort((a,b)=>a.d-b.d).slice(0,n);
+  const l=pick(-1,nL).sort((a,b)=>a.y-b.y||a.x-b.x),rr=pick(1,nR).sort((a,b)=>a.y-b.y||a.x-b.x);
+  const used=new Set([...l,...rr]);
+  const ys=[...l,...rr].map(c=>c.y);const top=Math.min(50,...ys),bot=Math.max(530,...ys);
+  return{cx,cy,l,r:rr,top,bot,decor:cells.filter(c=>!used.has(c)&&c.y>=top&&c.y<=bot)};
+}
+let VC=null;
+function vault(){
+  VC=layout(A.length,K.length+2);
+  const{cx,cy,decor}=VC,c=proj().c,pos={};
+  A.forEach((a,i)=>pos[a.id]=VC.l[i]);K.forEach((k,i)=>pos[k.id]=VC.r[i]);VC.pos=pos;
+  const addCell=VC.r[K.length],addSrvCell=VC.r[K.length+1];
+  const spin=fx.last?'nudge':(fx.enter||fx.drawAll)?'spin':'';
+  const o=fx.last&&pos[fx.last.r]?pos[fx.last.r]:{x:cx,y:cy};
+  const delay=p=>Math.round(Math.hypot(p.x-o.x,p.y-o.y)*.9);
+  const dec=decor.map((p,i)=>`<g class="hx" style="--d:${delay(p)}"><polygon class="decor" style="--k:${(i*1.7)%8};--d:${delay(p)}" points="${hexPts(p.x,p.y,52)}"/></g>`).join('');
+  const R=[...A,...K];
+  let lines='',dots='',n=0;
+  R.forEach((r,i)=>{if(!L[cur].has(r.id))return;const d=spoke(cx,cy,pos[r.id],164,50),dr=fx.drawAll||(fx.last&&fx.last.r===r.id&&fx.last.on);lines+=`<path pathLength="1" class="ln on ${dr?'draw':''}" style="--i:${n}" stroke="${r.c}" d="${d}"/>`;dots+=dot(d,r.c,1.7,(i*.45)%1.7,3);n++});
+  if(fx.ghost){const g=R.find(r=>r.id===fx.ghost);if(g)lines+=`<path pathLength="1" class="ln on gone" stroke="${g.c}" d="${spoke(cx,cy,pos[g.id],164,50)}"/>`}
+  const hexes=R.map((r,i)=>{const on=L[cur].has(r.id),{x,y}=pos[r.id],hit=fx.last&&fx.last.r===r.id,st=ST[r.s];return `<g class="hx" style="--d:${delay(pos[r.id])}"><g data-r="${esc(r.id)}" data-t="${r.t}" class="hov ${hit?'pop':''}"><title>${esc(r.n)}${st?' · '+st[1]:''}${r.t==='server'?' · '+esc(r.k)+' · '+esc(folderText(r.id)):''}</title>
+    ${hit&&fx.last.on?`<circle class="burst" cx="${x}" cy="${y}" r="44" stroke="${r.c}"/>`:''}
+    ${on?`<polygon class="halo" points="${hexPts(x,y,56)}" fill="${r.c}" style="animation-delay:calc(var(--t,0s) + ${-i*.35}s)"/>`:''}
+    <polygon points="${hexPts(x,y,52)}" fill="${on?r.c:'#151a2e'}" stroke="${on?'rgba(255,255,255,.8)':'#3a4270'}" stroke-width="${on?2:1.5}" stroke-linejoin="round"/>
+    ${icon(r.t==='key'&&!on?'lock':r.i,28,on?'#fff':'#6a739c',x-14,y-27)}
+    <text x="${x}" y="${y+20}" text-anchor="middle" font-size="11" font-weight="600" style="fill:${on?'#fff':'#7f88ad'}">${esc(short(r.n,/^[A-Z0-9_ ()]+$/.test(r.n)?10:12))}</text>
+    ${st&&(r.s==='needs-auth'||r.s==='failed')?`<circle class="ping" cx="${x+30}" cy="${y-30}" r="7" fill="${st[0]}"/><circle cx="${x+30}" cy="${y-30}" r="7" fill="${st[0]}" stroke="#0b0e1a" stroke-width="2"/>`:''}</g></g>`}).join('');
+  const addTile=(cell,kind,label)=>cell?`<g class="hx" style="--d:${delay(cell)}"><g data-add="${kind}" class="hov"><title>${label}</title><polygon points="${hexPts(cell.x,cell.y,52)}" fill="#10142a" stroke="#5a639c" stroke-width="1.5" stroke-dasharray="5 5" stroke-linejoin="round"/>${icon('plus',26,'#98a0c4',cell.x-13,cell.y-25)}<text x="${cell.x}" y="${cell.y+20}" text-anchor="middle" font-size="11" font-weight="600" style="fill:#98a0c4">${label}</text></g></g>`:'';
+  const addHex=addTile(addCell,'server','Add server')+addTile(addSrvCell,'key','Add key');
+  const bolts=[...Array(16)].map((_,i)=>{const t=i*22.5*Math.PI/180;return `<circle cx="${(cx+146*Math.cos(t)).toFixed(1)}" cy="${(cy+146*Math.sin(t)).toFixed(1)}" r="5.5" fill="#8c95c8" stroke="#0b0e1a"/>`}).join('');
+  const spokes=[0,60,120].map(a=>{const t=a*Math.PI/180,dx=68*Math.cos(t),dy=68*Math.sin(t);return `<line x1="${(cx-dx).toFixed(1)}" y1="${(cy-dy).toFixed(1)}" x2="${(cx+dx).toFixed(1)}" y2="${(cy+dy).toFixed(1)}" stroke="#aab2e0" stroke-width="9" stroke-linecap="round"/><circle cx="${(cx+dx).toFixed(1)}" cy="${(cy+dy).toFixed(1)}" r="9.5" fill="#d7dcf7"/><circle cx="${(cx-dx).toFixed(1)}" cy="${(cy-dy).toFixed(1)}" r="9.5" fill="#d7dcf7"/>`}).join('');
+  const frac=(K.filter(k=>L[cur].has(k.id)).length/Math.max(K.length,1)).toFixed(3);
+  const vbTop=VC.top-60,vbH=VC.bot-VC.top+200,feedY=VC.bot+105;
+  return rail()+`<svg class="canvas" viewBox="0 ${vbTop} 1200 ${vbH}"><defs>
+      <radialGradient id="steel" cx=".4" cy=".35"><stop offset="0" stop-color="#454d80"/><stop offset="1" stop-color="#191e3c"/></radialGradient>
+      <radialGradient id="plate" cx=".42" cy=".36"><stop offset="0" stop-color="#2b3160"/><stop offset="1" stop-color="#11152c"/></radialGradient></defs>
+    ${dec}${lines}${dots}<g id="beams"></g>${hexes}${addHex}
+    <circle class="doorGlow" cx="${cx}" cy="${cy}" r="178" fill="${c}"/>
+    <circle cx="${cx}" cy="${cy}" r="162" fill="url(#steel)" stroke="#5a639c" stroke-width="2"/>
+    <g style="transform-origin:${cx}px ${cy}px;transform:rotate(var(--a,0deg))">${bolts}</g>
+    <circle cx="${cx}" cy="${cy}" r="128" fill="none" stroke="${c}" stroke-width="6" stroke-dasharray="2 12" opacity=".85" style="transform-origin:${cx}px ${cy}px;transform:rotate(calc(var(--a,0deg) * -1.6))"/>
+    <circle cx="${cx}" cy="${cy}" r="113" fill="url(#plate)" stroke="#3a4270" stroke-width="2"/>
+    <circle class="arc ${spin==='spin'?'fill':''}" cx="${cx}" cy="${cy}" r="113" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" pathLength="1" stroke-dasharray="${frac} 1" style="transform-origin:${cx}px ${cy}px;transform:rotate(-90deg)"/>
+    <g class="wheel ${spin}" style="transform-origin:${cx}px ${cy}px"><circle cx="${cx}" cy="${cy}" r="68" fill="none" stroke="#aab2e0" stroke-width="8"/>${spokes}</g>
+    <circle cx="${cx}" cy="${cy}" r="31" fill="${c}" stroke="#fff" stroke-width="2"/>${icon('lock',30,'#fff',cx-15,cy-16)}
+    <rect x="${cx-122}" y="${cy+118}" width="244" height="58" rx="17" fill="#0f1328" stroke="${c}" stroke-width="2"/>
+    <text x="${cx}" y="${cy+143}" text-anchor="middle" font-size="16" font-weight="800">${esc(short(proj().name,26))}</text>
+    <text x="${cx}" y="${cy+163}" text-anchor="middle" font-size="12" style="fill:#98a0c4">${count(cur)}</text>
+    <text id="feed" x="${cx}" y="${feedY}" text-anchor="middle" font-size="14" font-weight="500" style="fill:#c8ccff">${esc(feedText())}</text></svg>`;
+}
+function feedText(){
+  const mine=S.activity.filter(a=>a.project===cur&&a.detail!=='finished');const a=mine[mine.length-1];if(!a)return 'No activity yet for this project';
+  const when=new Date(a.time);const hh=when.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return `${when.toDateString()===new Date().toDateString()?'Today':when.toLocaleDateString()} ${hh}: AI used ${a.itemName} (${a.kind}). It got the result, not the key`;
+}
+function fireBeam(a){
+  if(view!=='vault'||!VC||a.project!==cur)return;
+  const b=document.getElementById('beams'),f=document.getElementById('feed');if(f){f.textContent=feedText();f.classList.remove('feedIn');void f.getBBox();f.classList.add('feedIn')}
+  const p=VC.pos&&VC.pos[a.item];if(!b||!p||!motion)return;
+  b.innerHTML=`<path class="beam" pathLength="1" stroke="#fff" d="${spoke(VC.cx,VC.cy,p,164,50)}"/><circle class="burst" cx="${p.x}" cy="${p.y}" r="44" stroke="${proj().c}"/>`;
+}
+function emptyView(){
+  const sugs=S.suggested.map(s=>`<button class="btn quiet" data-suggest="${esc(s.path)}">${esc(s.name)}</button>`).join('');
+  return `<div class="empty"><div>${icon('lock',54,'#8b6cff')}</div><h2>Add your first project</h2><p>Each project gets its own set of keys and apps. The AI can use what you switch on. It has no command that shows a key.</p>${sugs?`<p>These folders have a <code>.deploy</code> file:</p><div class="sugs">${sugs}</div>`:''}<button class="btn" data-add="project">Choose a folder</button></div>`;
+}
+
+/* ---------- rendering ---------- */
+const stage=document.getElementById('stage'),toastEl=document.getElementById('toast'),thumb=document.getElementById('thumb');
+let toastTimer;
+function toast(msg,c='#2fd27c'){toastEl.querySelector('span').textContent=msg;toastEl.querySelector('em').style.background=c;toastEl.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2300)}
+function moveThumb(){const b=document.querySelector(`#seg button[data-v="${view}"]`);if(b.offsetWidth){thumb.style.left=b.offsetLeft+'px';thumb.style.width=b.offsetWidth+'px'}}
+function render(){
+  stage.style.setProperty('--t',`${-(performance.now()/1000).toFixed(3)}s`);
+  const has=!!cur&&!!proj();
+  if(has)stage.style.setProperty('--pc',proj().c);
+  stage.className=(fx.enter?'enter':'')+(has&&view==='vault'&&(fx.enter||fx.drawAll||fx.last)?' wave':'');
+  stage.innerHTML=has?{map,orbit,wall,vault}[view]():emptyView();
+  document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
+  moveThumb();
+  const lock=document.getElementById('lock');lock.className='chip'+(S.unlocked?' open':'');lock.innerHTML=icon(S.unlocked?'unlock':'lock',15,S.unlocked?'#2fd27c':'#eef1ff')+(S.unlocked?'Unlocked':'Locked');
+  document.getElementById('hint').textContent=has?(view==='map'?'Click a project, then a server to set its folder, or an app or key to switch it on or off. Changes ask for Touch ID.':`Click a server to set its folder for ${proj().name}, or an app or key to switch it on or off. Changes ask for Touch ID.`):'Keys are never shown after saving, not even here.';
+  fx={enter:false,drawAll:false,last:null,ghost:null};
+}
+let angle=0,paused=false,lastT=0;
+function tick(t){const dt=Math.min(t-lastT,60);lastT=t;if((view==='orbit'&&!paused)||view==='vault'){angle=(angle+dt*.0045)%360;stage.style.setProperty('--a',angle.toFixed(2)+'deg')}requestAnimationFrame(tick)}
+if(motion)requestAnimationFrame(tick);
+stage.addEventListener('mouseover',e=>{paused=!!e.target.closest('[data-r]')});
+stage.addEventListener('mouseleave',()=>{paused=false});
+
+/* ---------- actions ---------- */
+function afterCall(r,ok){
+  if(r.cancelled)return false;
+  if(r.error){toast(r.error,'#ff5a5f');return false}
+  if(r.state){if(ok)ok();applyState(r.state);render();if(document.getElementById('drawer').classList.contains('show'))drawDrawer()}
+  if(r.message)toast(r.message);
+  return true;
+}
+stage.addEventListener('click',async e=>{
+  if(e.target.closest('[data-retry]'))return boot('retryKey');
+  const sug=e.target.closest('[data-suggest]');if(sug)return afterCall(await call('addProject',{path:sug.dataset.suggest}),()=>{fx={enter:true,drawAll:true,last:null,ghost:null}});
+  const add=e.target.closest('[data-add]');
+  if(add){if(add.dataset.add==='project')return afterCall(await call('addProject'),()=>{fx={enter:true,drawAll:true,last:null,ghost:null}});if(add.dataset.add==='server')return openServerModal();return openKeyModal()}
+  const t=e.target.closest('[data-p],[data-r]');if(!t)return;
+  if(t.dataset.p){if(t.dataset.p===cur)return;cur=t.dataset.p;fx={enter:view!=='map',drawAll:true,last:null,ghost:null};toast(`Showing ${proj().name}`,proj().c);return render()}
+  if(t.dataset.t==='server')return openLinkModal(t.dataset.r);
+  const r=t.dataset.r,was=L[cur].has(r),pname=proj().name;
+  const res=await call('toggle',{project:cur,item:r,kind:t.dataset.t});
+  afterCall(res,()=>{fx={enter:false,drawAll:false,last:{r,on:!was},ghost:was?r:null};toast(was?`${nameOf(r)} turned off for ${pname}`:`${nameOf(r)} turned on for ${pname}`,was?'#ff5a5f':'#2fd27c')});
+});
+document.getElementById('seg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.dataset.v===view)return;view=b.dataset.v;fx={enter:true,drawAll:true,last:null,ghost:null};render()});
+document.getElementById('lock').addEventListener('click',async()=>afterCall(await call(S.unlocked?'lock':'unlock')));
+document.getElementById('auto').innerHTML=icon('spark',15,'#eef1ff')+'Auto deploy';
+document.getElementById('auto').addEventListener('click',()=>openAutoDeploy());
+document.getElementById('settings').innerHTML=icon('gear',15,'#eef1ff')+'Settings';
+document.getElementById('settings').addEventListener('click',()=>openDrawer());
+document.getElementById('logo').innerHTML=icon('lock',18);
+
+/* ---------- settings ---------- */
+const drawer=document.getElementById('drawer'),scrim=document.getElementById('scrim'),modal=document.getElementById('modal'),mscrim=document.getElementById('mscrim');
+function openDrawer(t){if(t)tab=t;drawDrawer();drawer.classList.add('show');scrim.classList.add('show')}
+function closeDrawer(){drawer.classList.remove('show');scrim.classList.remove('show')}
+scrim.addEventListener('click',closeDrawer);
+function drawDrawer(){
+  const tabs={servers:'Servers',keys:'Keys',actions:'Actions',apps:'Apps',project:'Project',transfer:'New Mac'};
+  document.getElementById('dtabs').innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-tab="${k}" class="${k===tab?'on':''}">${v}</button>`).join('');
+  document.getElementById('dbody').innerHTML={servers:drawServers,keys:drawKeys,actions:drawActions,apps:drawApps,project:drawProject,transfer:drawTransfer}[tab]();
+}
+function drawServers(){
+  const rows=S.servers.map(s=>`<div class="row"><div class="grow"><b>${esc(s.name)}</b><small>${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}</small><small>${s.usedBy.length?esc(s.usedBy.map(u=>u.project+' ('+(u.path||'login folder')+')').join(', ')):'Not mapped to any project'}</small></div><div class="ops"><button class="btn quiet small" data-do="editServer" data-id="${esc(s.id)}">Edit</button>${s.auth==='system'?'':`<button class="btn quiet small" data-do="replaceLogin" data-id="${esc(s.id)}">Replace login</button>`}<button class="btn danger small" data-do="deleteServer" data-id="${esc(s.id)}">Delete</button></div></div>`).join('');
+  return `<p class="note">A server holds its address and login. Map it to a project and a folder from the main screen by clicking its hexagon. <b>Logins are write-only.</b></p><button class="btn" data-do="newServer" style="margin-bottom:14px">Add server</button>${rows||'<p class="note">No servers yet.</p>'}`;
+}
+function drawKeys(){
+  const rows=S.keys.map(k=>`<div class="row"><div class="grow"><b>${esc(k.name)}</b><small>${esc(KIND[k.kind]||k.kind)} · ${esc(k.env)}${k.allowedHosts?' · '+esc(k.allowedHosts.join(', ')):''}</small><small>${k.usedBy.length?'Used by '+esc(k.usedBy.join(', ')):'Not used by any project'}</small></div><div class="ops"><button class="btn quiet small" data-do="editKey" data-id="${esc(k.id)}">Edit</button><button class="btn quiet small" data-do="replaceKey" data-id="${esc(k.id)}">Replace</button><button class="btn danger small" data-do="deleteKey" data-id="${esc(k.id)}">Delete</button></div></div>`).join('');
+  return `<p class="note">For API tokens and passwords that are not a server login. Keys are <b>write-only</b>. Once saved, the vault has no way to show them again, on this page or on the command line.</p><button class="btn" data-do="newKey" style="margin-bottom:14px">Add key</button>${rows||'<p class="note">No keys yet.</p>'}`;
+}
+function drawActions(){
+  const p=rawProj();if(!p)return '<p class="note">Add a project first.</p>';
+  const rows=p.actions.map(a=>`<div class="row"><div class="grow"><b>${esc(a.name)}</b><small>${esc(a.script)}</small>${a.changed.length?`<small style="color:var(--warn)">Changed: ${esc(a.changed.join(', '))}</small>`:''}</div><span class="pill ${a.changed.length?'warn':'ok'}">${a.changed.length?'Needs approval':'Ready'}</span><div class="ops">${a.changed.length?`<button class="btn small" data-do="approveAction" data-id="${esc(a.name)}">Approve</button>`:''}<button class="btn danger small" data-do="removeAction" data-id="${esc(a.name)}">Remove</button></div></div>`).join('');
+  return `<p class="note">An action is a script the AI may run with <b>${esc(p.name)}</b>'s keys. If the script changes, it stops running until you approve the new version, so a rewritten script cannot run with your keys.</p><div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap"><button class="btn" data-do="autoDeploy">Set up auto deployment with AI</button><button class="btn quiet" data-do="newAction">Add action</button>${p.hasDeploy?'<button class="btn quiet" data-do="scanDeploy">Move .deploy into the vault</button>':''}</div>${rows||'<p class="note">No actions yet.</p>'}`;
+}
+function drawApps(){
+  const rows=A.map(a=>{const st=ST[a.s]||ST.unknown;return `<div class="row"><div class="grow"><b>${esc(a.n)}</b></div><span class="pill ${a.s==='connected'?'ok':a.s==='needs-auth'?'warn':a.s==='failed'?'bad':''}">${st[1]}</span></div>`}).join('');
+  return `<p class="note">Everything connected to the AI right now. Sign-ins for these apps are handled by the app connection itself, so the vault does not hold them.</p><button class="btn" data-do="refreshApps" style="margin-bottom:14px" ${S.appsLoading?'disabled':''}>${S.appsLoading?'Checking…':'Check again'}</button>${rows||'<p class="note">None found yet.</p>'}`;
+}
+function drawProject(){
+  const p=rawProj();if(!p)return '<p class="note">No project selected.</p>';
+  const sugs=S.suggested.map(s=>`<button class="btn quiet small" data-suggest="${esc(s.path)}" data-do="addSuggested" data-id="${esc(s.path)}">${esc(s.name)}</button>`).join(' ');
+  const maps=p.links.map(l=>{const s=S.servers.find(x=>x.id===l.serverID);return `<div class="row"><div class="grow"><b>${esc(l.label)}</b><small>${esc(s?targetOf(s):'Missing server')} · ${esc(l.path||'login folder')}</small></div><div class="ops"><button class="btn quiet small" data-do="openLink" data-id="${esc(l.serverID)}">Edit</button></div></div>`}).join('');
+  return `<div class="row"><div class="grow"><b>${esc(p.name)}</b><small>${esc(p.path)}</small></div><div class="ops"><button class="btn quiet small" data-do="repath">Change folder</button><button class="btn danger small" data-do="removeProject">Remove</button></div></div><div class="sect">Mapped servers</div>${maps||'<p class="note">None yet. Click a server on the main screen to map it.</p>'}${sugs?`<div class="sect">Other folders with a .deploy file</div><div style="display:flex;flex-wrap:wrap;gap:6px">${sugs}</div>`:''}<div class="sect">Recent activity</div>${S.activity.slice().reverse().filter(a=>a.detail==='finished').slice(0,10).map(a=>`<div class="row"><div class="grow"><b>${esc(a.itemName)}</b><small>${esc(a.kind)} · ${esc(new Date(a.time).toLocaleString())}</small></div><span class="pill ${a.exit===0?'ok':'bad'}">exit ${esc(a.exit)}</span></div>`).join('')||'<p class="note">Nothing yet.</p>'}`;
+}
+function drawTransfer(){
+  return `<p class="note">Export makes one encrypted file protected by a passphrase you choose. Copy it to the new Mac, install Vault there, and import it. <b>Without the passphrase the file cannot be opened.</b></p><div style="display:flex;gap:8px"><button class="btn" data-do="export">Export</button><button class="btn quiet" data-do="import">Import</button></div>`;
+}
+function openModal(html,wide=false,view=''){modal.innerHTML=html;modal.dataset.view=view;modal.classList.toggle('wide',wide);modal.classList.add('show');mscrim.classList.add('show');const f=modal.querySelector('textarea,input,select');if(f)f.focus()}
+function closeModal(){modal.classList.remove('show');mscrim.classList.remove('show');modal.dataset.view=''}
+
+/* ---------- auto deployment ---------- */
+let genWatching=false;
+function setAutoChip(st){const c=document.getElementById('auto');const busy=st&&st.running,ready=st&&st.active&&!st.running&&st.result;c.classList.toggle('busy',!!busy);c.classList.toggle('ready',!!ready);c.innerHTML=icon('spark',15,ready?'#2fd27c':'#eef1ff')+(busy?'Writing script…':ready?'Review script':'Auto deploy')}
+async function openAutoDeploy(notes){
+  const st=await call('generatorStatus');
+  if(st.active){setAutoChip(st);closeDrawer();return drawGen(st)}
+  if(!cur)return toast('Add a project first','#ffb020');
+  const plan=await call('deployPlan',{project:cur});if(plan.error)return toast(plan.error,'#ff5a5f');
+  closeDrawer();
+  const rows=plan.servers.map(s=>`<div class="row"><div class="grow"><b>${esc(s.label)}</b><small>${esc(s.target)} · ${esc(s.folder||'login folder')}</small></div></div>`).join('');
+  if(!plan.servers.length)return openModal(`<h3>Set up auto deployment</h3><p class="note">Map a server to <b>${esc(plan.project)}</b> first, so the script knows where to deploy. Click a server's hexagon on the main screen to map it.</p><div class="mfoot"><button class="btn" data-do="closeModal">OK</button></div>`);
+  openModal(`<h3>Set up auto deployment for ${esc(plan.project)}</h3>
+    <p class="note">The AI studies this project and writes a deploy script for these servers. <b>It gets no passwords or keys</b>, cannot open <code>.env</code> or <code>.deploy</code>, and can change only the script file. Nothing runs until you read and approve it.</p>
+    ${rows}
+    <label class="f" style="margin-top:12px">What should a deploy do? (optional)<textarea id="f-notes" placeholder="Pull the latest code, install packages, run migrations, restart the queue">${esc(notes||'')}</textarea></label>
+    <label class="f">Save the script as<input id="f-spath" value="${esc(plan.path)}"></label>
+    ${plan.agent?'':'<p class="note" style="color:var(--warn)">No AI tool was found on this Mac. Copy the prompt and paste it into any AI tool instead.</p>'}
+    <div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn quiet" data-do="copyPrompt">Copy prompt</button><button class="btn" data-do="generate" ${plan.agent?'':'disabled'}>Write the script</button></div>`);
+}
+function drawGen(st){
+  if(st.running){
+    const lines=st.log.slice(-7).map(l=>`<div>${esc(l)}</div>`).join('');
+    const html=`<h3>Writing a deploy script for ${esc(st.projectName)}</h3><div class="gen-wait"><div class="gen-wheel"></div><p class="note" style="margin:0">Usually takes a minute or two. You can close this and keep working. The Auto deploy button shows when it's ready.</p></div><div class="gen-log" id="gen-log">${lines}</div><div class="mfoot"><button class="btn danger" data-do="cancelGen">Stop</button><button class="btn quiet" data-do="closeModal">Keep running in background</button></div>`;
+    if(modal.dataset.view==='gen-wait'&&modal.classList.contains('show'))document.getElementById('gen-log').innerHTML=lines;else openModal(html,true,'gen-wait');
+    return;
+  }
+  if(st.error||!st.result)return openModal(`<h3>The script was not written</h3><p class="note">${esc(st.error||'Something went wrong.')}</p><div class="mfoot"><button class="btn quiet" data-do="discardGen">Close</button></div>`,false,'gen-done');
+  const r=st.result,danger=r.findings.filter(f=>f.level==='danger').length;
+  const hit={};for(const f of r.findings)if(f.line&&hit[f.line]!=='danger')hit[f.line]=f.level;
+  const code=r.script.replace(/\n$/,'').split('\n').map((l,i)=>`<div class="${hit[i+1]?'hit-'+hit[i+1]:''}"><i>${i+1}</i><span>${esc(l)||' '}</span></div>`).join('');
+  const finds=r.findings.map(f=>`<div class="finding ${f.level}"><b>${f.level==='danger'?'RISK':'CHECK'}${f.line?' · line '+f.line:''}</b><span>${esc(f.message)}</span></div>`).join('');
+  openModal(`<h3>Review the script for ${esc(st.projectName)}</h3>
+    <p class="note">Nothing has run. This script only gets <b>${esc(st.projectName)}</b>'s secrets once you approve it, so read it first. <code>${esc(st.scriptPath)}</code></p>
+    ${r.notes?`<div class="ai-note">${esc(r.notes)}</div>`:''}
+    ${r.syntaxError?`<div class="finding danger"><b>RISK</b><span>The script has a syntax error: ${esc(r.syntaxError)}</span></div>`:''}
+    ${r.otherChanges.length?`<div class="finding danger"><b>RISK</b><span>Other files changed while the AI worked: ${esc(r.otherChanges.join(', '))}</span></div>`:''}
+    ${finds||(r.syntaxError?'':'<div class="finding"><b style="color:var(--ok)">OK</b><span>The automatic checks found nothing risky. They can miss things, so still read it.</span></div>')}
+    <div class="code">${code}</div>
+    <label class="f">Name this action<input id="f-gname" value="${esc(r.actionName)}"></label>
+    <div class="mfoot"><button class="btn danger" data-do="discardGen">Discard</button><button class="btn quiet" data-do="regen">Write it again</button><button class="btn" data-do="approveGen" data-project="${esc(st.project)}" data-script="${esc(st.scriptPath)}">${danger||r.syntaxError||r.otherChanges.length?'Approve anyway':'Approve script'}</button></div>`,true,'gen-done');
+}
+async function watchGenerator(){
+  if(genWatching)return;genWatching=true;
+  try{
+    while(true){
+      await new Promise(r=>setTimeout(r,800));
+      const st=await call('generatorStatus');setAutoChip(st);
+      const showing=modal.classList.contains('show')&&modal.dataset.view==='gen-wait';
+      if(!st.active||!st.running){if(showing)drawGen(st);else if(st.active)toast(st.result?'Your deploy script is ready to review':'The script was not written',st.result?'#2fd27c':'#ff5a5f');break}
+      if(showing)drawGen(st);
+    }
+  }finally{genWatching=false}
+}
+mscrim.addEventListener('click',closeModal);
+function keyFields(k){
+  const kind=k.kind;let extra='';
+  if(kind==='token')extra=`<label class="f">Allowed hosts, separated by commas<input id="f-hosts" value="${esc((k.allowedHosts||[]).join(', '))}" placeholder="api.example.com"></label><label class="f">Header name<input id="f-hname" value="${esc(k.headerName||'Authorization')}"></label><label class="f">Text before the token<input id="f-hpre" value="${esc(k.headerPrefix??'Bearer ')}"></label>`;
+  return extra;
+}
+function openKeyModal(existing){
+  const k=existing||{kind:'password'};
+  const draw=()=>{openModal(`<h3>${existing?'Edit key':'Add key'}</h3>${existing?`<p class="note">Change where this key may be used. To change its value, use Replace.</p>`:''}
+    <label class="f">Type<select id="f-kind">${Object.entries(KIND).map(([v,l])=>`<option value="${v}" ${v===k.kind?'selected':''}>${l}</option>`).join('')}</select></label>
+    ${existing?'':`<label class="f">Name<input id="f-name" value="${esc(k.name||'')}" placeholder="Database owner"></label><label class="f">Variable name for scripts<input id="f-env" value="${esc(k.env||'')}" placeholder="DB_OWNER_PASSWORD"></label>`}
+    <div id="f-extra">${keyFields(k)}</div>
+    ${existing?'':'<p class="note">Next you enter the value in a secure macOS box. It never passes through this page.</p>'}
+    <div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="${existing?'saveKeyEdit':'saveKey'}" data-id="${esc(k.id||'')}">${existing?'Save':'Continue'}</button></div>`);
+    modal.querySelector('#f-kind').addEventListener('change',e=>{for(const f of ['name','env']){const el=modal.querySelector('#f-'+f);if(el)k[f]=el.value}k.kind=e.target.value;draw()})};
+  draw();
+}
+const fval=id=>{const el=modal.querySelector('#f-'+id);return el?el.value:undefined};
+const keyArgs=()=>({kind:fval('kind'),name:fval('name'),env:fval('env'),allowedHosts:fval('hosts'),headerName:fval('hname'),headerPrefix:fval('hpre')});
+function openServerModal(existing){
+  const s=existing||{auth:'password',port:22};
+  openModal(`<h3>${existing?'Edit server':'Add server'}</h3>
+    <label class="f">Name<input id="f-sname" value="${esc(s.name||'')}" placeholder="Production"></label>
+    <label class="f">Host<input id="f-host" value="${esc(s.host||'')}" placeholder="203.0.113.10"></label>
+    <label class="f">User<input id="f-user" value="${esc(s.user||'')}" placeholder="root"></label>
+    <label class="f">Port<input id="f-port" value="${esc(s.port||22)}"></label>
+    <label class="f">Login<select id="f-auth">${Object.entries(AUTH).map(([v,l])=>`<option value="${v}" ${v===s.auth?'selected':''}>${l}</option>`).join('')}</select></label>
+    <p class="note">${existing?'Changing the login type asks for the new login.':'Next you enter the login in a secure macOS box. It never passes through this page.'}</p>
+    <div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="${existing?'saveServerEdit':'saveServer'}" data-id="${esc(s.id||'')}">${existing?'Save':'Continue'}</button></div>`);
+}
+const serverArgs=()=>({name:fval('sname'),host:fval('host'),user:fval('user'),port:fval('port'),auth:fval('auth')});
+const VAR_FIELDS={target:'user@host',host:'Host',user:'User',port:'Port',path:'Folder',password:'Password',key:'Private key file'};
+function linkForm(serverId,link,env){
+  const s=S.servers.find(x=>x.id===serverId);
+  const fields=Object.entries(VAR_FIELDS).filter(([f])=>f!=='password'||s.auth==='password').filter(([f])=>f!=='key'||s.auth==='key');
+  return `<label class="f">Folder on the server<input id="f-path" value="${esc(link?link.path:'')}" placeholder="/var/www/app"></label>
+    <label class="f">Name in this project<input id="f-label" value="${esc(link?link.label:(linksOf(serverId).length?'':(rawProj().links.some(l=>l.label==='main')?s.name:'main')))}" placeholder="main"></label>
+    <details class="vars"><summary>Variables your deploy script reads</summary>
+      <label class="f">Prefix<input id="f-prefix" value="" placeholder="DEPLOY"></label>
+      ${fields.map(([f,l])=>`<label class="f">${esc(l)}<input data-var="${f}" value="${esc(env[f]||'')}"></label>`).join('')}
+    </details>
+    <div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="saveLink" data-id="${esc(link?link.id:'')}" data-server="${esc(serverId)}">${link?'Save':'Map to '+esc(proj().name)}</button></div>`;
+}
+async function openLinkModal(serverId,linkId){
+  const s=S.servers.find(x=>x.id===serverId);if(!s)return;
+  const links=linksOf(serverId),editing=links.find(l=>l.id===linkId)||(links.length===1&&linkId===undefined?links[0]:null);
+  const showForm=linkId==='new'||editing||!links.length;
+  const r=await call('suggestEnv',{project:cur,prefix:'DEPLOY'});
+  const env=editing?editing.env:(r.env||{});
+  const head=`<h3>${esc(s.name)} in ${esc(proj().name)}</h3><p class="note">${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}. AI commands on this server start in the folder you set here.</p>`;
+  const list=links.length>1||(links.length===1&&!editing)?links.map(l=>`<div class="row"><div class="grow"><b>${esc(l.label)}</b><small>${esc(l.path||'login folder')}</small></div><div class="ops"><button class="btn quiet small" data-do="editLink" data-id="${esc(l.id)}" data-server="${esc(serverId)}">Edit</button><button class="btn danger small" data-do="removeLink" data-id="${esc(l.id)}">Remove</button></div></div>`).join(''):'';
+  const extra=editing?`<div style="display:flex;justify-content:space-between;margin-bottom:12px"><button class="btn quiet small" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button><button class="btn danger small" data-do="removeLink" data-id="${esc(editing.id)}">Remove mapping</button></div>`:'';
+  openModal(head+list+(showForm&&!(links.length>1&&!editing&&linkId!=='new')?extra+linkForm(serverId,editing,env):`<div class="mfoot"><button class="btn quiet" data-do="closeModal">Close</button><button class="btn" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button></div>`));
+  const prefix=modal.querySelector('#f-prefix');
+  if(prefix)prefix.addEventListener('change',async()=>{const x=await call('suggestEnv',{project:cur,prefix:prefix.value||'DEPLOY'});for(const el of modal.querySelectorAll('[data-var]'))el.value=(x.env||{})[el.dataset.var]||''});
+}
+async function doAction(el){
+  const d=el.dataset.do,id=el.dataset.id;
+  const run=async(op,args)=>afterCall(await call(op,args));
+  switch(d){
+    case 'closeDrawer':return closeDrawer();
+    case 'closeModal':return closeModal();
+    case 'autoDeploy':return openAutoDeploy();
+    case 'copyPrompt':{const r=await call('copyDeployPrompt',{project:cur,path:fval('spath'),notes:fval('notes')});if(r.error)return toast(r.error,'#ff5a5f');return toast('Prompt copied. It contains no passwords or keys')}
+    case 'generate':{const r=await call('startGenerator',{project:cur,path:fval('spath'),notes:fval('notes')});if(r.cancelled)return;if(r.error)return toast(r.error,'#ff5a5f');setAutoChip(r);drawGen(r);return watchGenerator()}
+    case 'cancelGen':{const r=await call('cancelGenerator');setAutoChip(r);return}
+    case 'discardGen':{const r=await call('discardGenerated');setAutoChip(r);return closeModal()}
+    case 'regen':{await call('discardGenerated');setAutoChip({active:false});closeModal();return openAutoDeploy()}
+    case 'approveGen':{const ok=afterCall(await call('addAction',{project:el.dataset.project,name:fval('gname'),script:el.dataset.script}));if(ok){setAutoChip(await call('generatorStatus'));closeModal();toast('Approved. The AI can now run it with vaultdoor run '+(fval('gname')||''))}return}
+    case 'newServer':return openServerModal();
+    case 'editServer':return openServerModal(S.servers.find(s=>s.id===id));
+    case 'saveServer':{const r=await call('addServer',serverArgs());if(afterCall(r)){closeModal();if(r.created&&cur){closeDrawer();openLinkModal(r.created)}}return}
+    case 'saveServerEdit':{const ok=await run('updateServer',{...serverArgs(),id});if(ok)closeModal();return}
+    case 'replaceLogin':return run('replaceLogin',{id});
+    case 'deleteServer':return run('deleteServer',{id});
+    case 'openLink':closeDrawer();return openLinkModal(id);
+    case 'editLink':return openLinkModal(el.dataset.server,id);
+    case 'saveLink':{const env={};for(const v of modal.querySelectorAll('[data-var]'))env[v.dataset.var]=v.value;const server=el.dataset.server;const had=L[cur].has(server);const ok=await afterCall(await call('saveLink',{project:cur,server,id:id||undefined,label:fval('label'),path:fval('path'),env}),()=>{fx={enter:false,drawAll:false,last:{r:server,on:!had},ghost:null}});if(ok)closeModal();return}
+    case 'removeLink':{const links=rawProj().links;const link=links.find(l=>l.id===id);const server=link&&link.serverID;const last=links.filter(l=>l.serverID===server).length===1;const ok=afterCall(await call('removeLink',{project:cur,id}),()=>{fx={enter:false,drawAll:false,last:last?{r:server,on:false}:null,ghost:last?server:null}});if(ok)closeModal();return}
+    case 'newKey':return openKeyModal();
+    case 'editKey':return openKeyModal(S.keys.find(k=>k.id===id));
+    case 'saveKey':{const ok=await run('addKey',{...keyArgs(),enableFor:cur});if(ok)closeModal();return}
+    case 'saveKeyEdit':{const ok=await run('updateKey',{...keyArgs(),id});if(ok)closeModal();return}
+    case 'replaceKey':return run('replaceKey',{id});
+    case 'deleteKey':return run('deleteKey',{id});
+    case 'newAction':return openModal(`<h3>Add action</h3><p class="note">The script and the project's <code>.deploy</code> file are recorded as approved. Any later change stops the action until you approve it.</p><label class="f">Action name<input id="f-aname" value="deploy"></label><label class="f">Script path inside the project<input id="f-script" placeholder="scripts/deploy.sh"></label><div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="saveAction">Approve</button></div>`);
+    case 'saveAction':{const ok=await run('addAction',{project:cur,name:fval('aname'),script:fval('script')});if(ok)closeModal();return}
+    case 'approveAction':return run('approveAction',{project:cur,name:id});
+    case 'removeAction':return run('removeAction',{project:cur,name:id});
+    case 'scanDeploy':{
+      const r=await call('scanDeploy',{project:cur});if(r.error)return toast(r.error,'#ff5a5f');
+      const warnText=names=>`<small style="display:block;margin:0;color:var(--warn)">${esc(r.script||'The script')} sets ${esc(names.join(', '))} itself, so it would ignore the vault. Update the script before moving this.</small>`;
+      const srv=(r.servers||[]).map(x=>`<label class="check" style="align-items:flex-start"><input type="checkbox" data-prefix="${esc(x.prefix)}" ${x.warn.length?'':'checked'}><span><code>${esc(x.target)}${x.port?':'+esc(x.port):''}</code><small style="display:block;margin:0">${esc(AUTH[x.auth]||x.auth)} · ${x.folders.map(esc).join(' · ')}</small>${x.warn.length?warnText(x.warn):''}</span></label>`).join('');
+      const sec=(r.secrets||[]).map(x=>`<label class="check" style="align-items:flex-start"><input type="checkbox" data-key="${esc(x.key)}" ${x.movable&&!x.warn?'checked':''} ${x.movable?'':'disabled'}><span><code>${esc(x.key)}</code>${x.movable?'':`<small style="display:block;margin:0">${esc(x.reason)}</small>`}${x.warn?warnText([x.key]):''}</span></label>`).join('');
+      return openModal(`<h3>Move .deploy into the vault</h3><p class="note">Ticked items move into the vault and are removed from <code>.deploy</code>. Other settings stay in the file.</p>${srv?`<div class="sect">Servers</div>${srv}`:''}${sec?`<div class="sect">Secrets</div>${sec}`:''}${srv||sec?'':'<p class="note">Nothing to move.</p>'}<div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="moveDeploy">Move</button></div>`);
+    }
+    case 'moveDeploy':{const picked=[...modal.querySelectorAll('input[type=checkbox]:checked')];const ok=await run('importDeploy',{project:cur,servers:picked.filter(c=>c.dataset.prefix).map(c=>c.dataset.prefix),keys:picked.filter(c=>c.dataset.key).map(c=>c.dataset.key)});if(ok)closeModal();return}
+    case 'refreshApps':return run('refreshApps');
+    case 'repath':return run('repath',{id:cur});
+    case 'removeProject':return run('removeProject',{id:cur});
+    case 'addSuggested':return run('addProject',{path:id});
+    case 'export':return run('export');
+    case 'import':return run('import');
+  }
+}
+for(const host of [drawer,modal])host.addEventListener('click',e=>{const t=e.target.closest('[data-tab]');if(t){tab=t.dataset.tab;return drawDrawer()}const el=e.target.closest('[data-do]');if(el)doAction(el)});
+addEventListener('keydown',e=>{if(e.key==='Escape'){if(modal.classList.contains('show'))closeModal();else closeDrawer()}});
+addEventListener('resize',moveThumb);
+
+window.vaultRefresh=async()=>{const r=await call('state');if(r.state){applyState(r.state);render();if(drawer.classList.contains('show'))drawDrawer()}};
+async function poll(){
+  try{
+    const r=await call('activity');const list=r.activity||[];const fresh=list.filter(a=>a.detail!=='finished'&&(!lastActivity||a.time>lastActivity));
+    if(fresh.length){lastActivity=fresh[fresh.length-1].time;S.activity=list;fresh.forEach(fireBeam)}else S.activity=list;
+  }catch(e){}
+}
+setInterval(poll,2500);
+
+/* ---------- browser preview only: used when there is no app around the page ---------- */
+const preview={projects:[{id:'p1',name:'shop',path:'/projects/shop',keyIDs:['k3'],links:[{id:'l1',serverID:'s1',label:'main',path:'/var/www/api',env:{target:'DEPLOY_SSH',path:'DEPLOY_PATH',password:'DEPLOY_SSH_PASSWORD'}},{id:'l2',serverID:'s1',label:'web',path:'/var/www/web',env:{path:'DEPLOY_WEB_PATH'}}],disabledApps:['whatsapp'],actions:[{name:'deploy',script:'scripts/deploy.sh',changed:[]}],hasDeploy:true},{id:'p2',name:'blog',path:'/projects/blog',keyIDs:[],links:[{id:'l3',serverID:'s2',label:'web',path:'/var/www/blog',env:{host:'WEB_HOST'}}],disabledApps:[],actions:[{name:'deploy',script:'deploy.sh',changed:['deploy.sh']}],hasDeploy:false}],
+  servers:[{id:'s1',name:'Production',host:'example.test',user:'deploy',port:22,auth:'password',hasLogin:true,usedBy:[{project:'shop',label:'main',path:'/var/www/api'},{project:'shop',label:'web',path:'/var/www/web'}]},{id:'s2',name:'Web box',host:'web.example.test',user:'root',port:2222,auth:'system',hasLogin:false,usedBy:[{project:'blog',label:'web',path:'/var/www/blog'}]},{id:'s3',name:'Staging',host:'staging.example.test',user:'ubuntu',port:22,auth:'key',hasLogin:true,usedBy:[]}],
+  keys:[{id:'k3',name:'Database owner',env:'DB_OWNER_PASSWORD',kind:'password',usedBy:['shop']},{id:'k4',name:'API token',env:'API_TOKEN',kind:'token',allowedHosts:['api.example.test'],usedBy:[]}],
+  apps:[{id:'gmail',name:'Gmail',status:'connected'},{id:'jira',name:'Jira',status:'connected'},{id:'slack',name:'Slack',status:'needs-auth'},{id:'github',name:'GitHub',status:'failed'},{id:'whatsapp',name:'WhatsApp',status:'connected'}],activity:[],suggested:[],unlocked:false,appsLoading:false};
+let previewGen=null;
+async function previewCall(op,a){
+  if(op==='activity')return JSON.stringify({activity:[]});
+  if(op==='toggle'){const p=preview.projects.find(x=>x.id===a.project);const list=a.kind==='app'?p.disabledApps:p.keyIDs;const i=list.indexOf(a.item);i>=0?list.splice(i,1):list.push(a.item)}
+  if(op==='scanDeploy')return JSON.stringify({script:'deploy.sh',servers:[{prefix:'DEPLOY',target:'deploy@example.test',port:22,auth:'password',folders:['main: /var/www/api','web: /var/www/web'],warn:[]}],secrets:[{key:'DB_OWNER_PASSWORD',movable:true,warn:false},{key:'ADMIN_PASSWORD',movable:true,warn:true}]});
+  if(op==='deployPlan')return JSON.stringify({project:'shop',path:'scripts/deploy-auto.sh',exists:false,agent:true,servers:[{label:'main',target:'deploy@example.test',folder:'/var/www/api',login:'password'}]});
+  if(op==='startGenerator'){previewGen={t:Date.now(),path:a.path};}
+  if(op==='discardGenerated'||op==='addAction')previewGen=null;
+  if(op==='copyDeployPrompt')return JSON.stringify({copied:true});
+  if(op==='startGenerator'||op==='generatorStatus'||op==='cancelGenerator'||op==='discardGenerated'){
+    if(!previewGen)return JSON.stringify({active:false});
+    const age=Date.now()-previewGen.t,running=age<2500;
+    return JSON.stringify({active:true,running,project:'p1',projectName:'shop',scriptPath:previewGen.path,seconds:Math.round(age/1000),log:['Starting the AI, with no access to your secrets','Reading composer.json','Searching the code','Writing '+previewGen.path].slice(0,1+Math.floor(age/700)),error:null,result:running?null:{script:'#!/usr/bin/env bash\nset -euo pipefail\n\necho "Deploying to $DEPLOY_SSH"\nset -x\nsshpass -d 3 ssh "$DEPLOY_SSH" "cd $DEPLOY_PATH && git pull" 3<<<"$DEPLOY_SSH_PASSWORD"\nrm -rf "$DEPLOY_PATH/cache"\n',notes:'Pulls the latest code on the server. Assumed the app uses git on the server. Check the cache path.',findings:[{line:5,level:'danger',message:'Prints every command, which can expose secrets.'},{line:7,level:'warning',message:'Deletes files. Check exactly what it removes.'}],syntaxError:null,otherChanges:[],actionName:'deploy-auto'}});
+  }
+  if(op==='suggestEnv')return JSON.stringify({env:{target:(a.prefix||'DEPLOY')+'_SSH',path:(a.prefix||'DEPLOY')+'_PATH',password:(a.prefix||'DEPLOY')+'_PASSWORD'}});
+  if(op==='saveLink'){const p=preview.projects.find(x=>x.id===a.project);const l={id:a.id||('l'+Date.now()),serverID:a.server,label:a.label,path:a.path,env:a.env};const i=p.links.findIndex(x=>x.id===a.id);i>=0?p.links[i]=l:p.links.push(l)}
+  if(op==='removeLink'){const p=preview.projects.find(x=>x.id===a.project);p.links=p.links.filter(x=>x.id!==a.id)}
+  return JSON.stringify({state:preview});
+}
+if(!bridge)document.getElementById('preview').style.display='block';
+
+let booted=false;
+async function boot(op='state'){
+  const waiting=setTimeout(()=>{if(!booted)stage.innerHTML=`<div class="empty"><div>${icon('lock',54,'#8b6cff')}</div><h2>Waiting for macOS</h2><p>VaultDoor is asking to open its key. If a Keychain prompt is open, enter your Mac password and choose <b>Always Allow</b>. The prompt may be behind other windows.</p></div>`},500);
+  const r=await call(op);clearTimeout(waiting);
+  if(r.error){stage.innerHTML=`<div class="empty"><div>${icon('lock',54,'#ff5a5f')}</div><h2>The vault could not open</h2><p>${esc(r.error)} Click Try again, then choose <b>Always Allow</b> on the Keychain prompt.</p><button class="btn" data-retry="1">Try again</button></div>`;return}
+  booted=true;applyState(r.state);render();requestAnimationFrame(moveThumb);
+  const g=await call('generatorStatus');setAutoChip(g);if(g.running)watchGenerator();
+}
+document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
+document.getElementById('lock').innerHTML=icon('lock',15,'#eef1ff')+'Locked';
+moveThumb();requestAnimationFrame(moveThumb);
+boot();
+</script>
+</body>
+</html>
