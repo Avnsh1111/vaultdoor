@@ -21,6 +21,9 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
     private var appsLoading = false
     private let selfTest: Bool
     private var generator: GeneratorJob?
+    #if VAULT_TEST
+    private var keepAwake: NSObjectProtocol?
+    #endif
     private var pageHTML = ""
     private var keyReady = false
     private var keyLoading = false
@@ -35,6 +38,16 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
         NSApp.mainMenu = makeMenu()
         let config = WKWebViewConfiguration()
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "vault")
+        #if VAULT_TEST
+        if ProcessInfo.processInfo.environment["VAULT_TEST_RECORDING"] != nil {
+            // A window behind others normally has its timers and animations slowed.
+            for setting in ["hiddenPageDOMTimerThrottlingEnabled", "hiddenPageCSSAnimationSuspensionEnabled", "pageVisibilityBasedProcessSuppressionEnabled"]
+            where config.preferences.responds(to: Selector("_set\(setting.prefix(1).uppercased())\(setting.dropFirst()):")) {
+                config.preferences.setValue(false, forKey: setting)
+            }
+            keepAwake = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "Recording")
+        }
+        #endif
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -502,7 +515,11 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
             let data = try Store.load()
             guard let project = data.projects.first(where: { $0.id == text(args, "project") }) else { return done(errorJSON("Unknown project.")) }
             let prefix = text(args, "prefix")?.uppercased() ?? "DEPLOY"
-            done(encodeJSON(["env": suggestedLinkEnv(prefix: prefix, names: deployVariableNames(projectPath: project.path))]))
+            // One variable cannot hold two servers, so skip names another mapping already fills.
+            let linkID = text(args, "id")
+            let taken = Set(project.links.filter { $0.id != linkID }.flatMap { $0.env.values })
+            let env = suggestedLinkEnv(prefix: prefix, names: deployVariableNames(projectPath: project.path)).filter { !taken.contains($0.value) }
+            done(encodeJSON(["env": env]))
         } catch {
             done(errorJSON("\(error)"))
         }
@@ -843,12 +860,18 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             let canary = ProcessInfo.processInfo.environment["VAULT_TEST_CANARY"] ?? "\u{0}"
             if let file = ProcessInfo.processInfo.environment["VAULT_TEST_GUI_SCRIPT"], let script = try? String(contentsOfFile: file, encoding: .utf8) {
+                var recorder: PageRecorder?
+                if let path = ProcessInfo.processInfo.environment["VAULT_TEST_RECORD_TO"] {
+                    recorder = try? PageRecorder(web: self.web, path: path)
+                    recorder?.start()
+                }
                 self.web.callAsyncJavaScript(script, arguments: [:], in: nil, in: .page) { outcome in
                     switch outcome {
                     case .success(let value): print("BRIDGE \(value)")
                     case .failure(let error): print("BRIDGE-ERROR \(error)")
                     }
-                    NSApp.terminate(nil)
+                    guard let recorder else { return NSApp.terminate(nil) }
+                    recorder.finish { DispatchQueue.main.async { NSApp.terminate(nil) } }
                 }
                 return
             }

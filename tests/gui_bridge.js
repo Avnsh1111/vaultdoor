@@ -110,6 +110,15 @@ try {
   check('moved values stay out of the page', !JSON.stringify(S).includes('win-Canary'));
   await click('[data-do="closeDrawer"]', 300);
 
+  // A second server, leaving the suggested variables as they are.
+  await click(`[data-r="${staging.id}"]`, 500);
+  check('a second server suggests no variable already in use', ![...document.querySelectorAll('[data-var]')].some(e => ['DEPLOY_SSH', 'DEPLOY_PATH', 'DEPLOY_SSH_PASSWORD', 'DEPLOY_SSH_PORT'].includes(e.value)), [...document.querySelectorAll('[data-var]')].map(e => e.value));
+  $('#f-path').value = '/srv/second';
+  $('#f-label').value = 'second';
+  await click('[data-do="saveLink"]', 600);
+  check('a second server maps with the suggested settings', project().links.some(l => l.label === 'second' && l.path === '/srv/second'), $('#toast').textContent);
+  check('the mapping dialog closes after saving', !$('#modal').classList.contains('show'));
+
   // Auto deploy: the button, the live run, the review, the approval.
   await click('#auto', 500);
   check('the auto deploy button opens its form', !!$('#f-spath') && !!$('#f-notes'), $('#modal').innerText.slice(0, 120));

@@ -642,7 +642,7 @@ async function openLinkModal(serverId,linkId){
   const extra=editing?`<div style="display:flex;justify-content:space-between;margin-bottom:12px"><button class="btn quiet small" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button><button class="btn danger small" data-do="removeLink" data-id="${esc(editing.id)}">Remove mapping</button></div>`:'';
   openModal(head+list+(showForm&&!(links.length>1&&!editing&&linkId!=='new')?extra+linkForm(serverId,editing,env):`<div class="mfoot"><button class="btn quiet" data-do="closeModal">Close</button><button class="btn" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button></div>`));
   const prefix=modal.querySelector('#f-prefix');
-  if(prefix)prefix.addEventListener('change',async()=>{const x=await call('suggestEnv',{project:cur,prefix:prefix.value||'DEPLOY'});for(const el of modal.querySelectorAll('[data-var]'))el.value=(x.env||{})[el.dataset.var]||''});
+  if(prefix)prefix.addEventListener('change',async()=>{const x=await call('suggestEnv',{project:cur,id:editing?editing.id:undefined,prefix:prefix.value||'DEPLOY'});for(const el of modal.querySelectorAll('[data-var]'))el.value=(x.env||{})[el.dataset.var]||''});
 }
 async function doAction(el){
   const d=el.dataset.do,id=el.dataset.id;
