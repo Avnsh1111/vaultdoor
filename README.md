@@ -2,7 +2,7 @@
 
 # VaultDoor
 
-**Your AI uses your passwords. It never sees them.**
+**Let your AI use your passwords without seeing them.**
 
 A skill for AI coding tools that keeps server logins and API keys in an encrypted vault on your Mac,<br>with a visual dashboard to control what each project can use.
 
