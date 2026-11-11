@@ -397,6 +397,10 @@ private func sshWithLogin(
 ) throws -> Int32 {
     guard let ssh = toolPath("ssh", candidates: ["/usr/bin/ssh"]) else { throw VaultError("ssh was not found.") }
     var sshArgs = ["-o", "StrictHostKeyChecking=accept-new"] + options + ["-p", String(server.port ?? 22)]
+    #if VAULT_TEST
+    // Lets the end-to-end test keep a test server's host key out of ~/.ssh.
+    if let file = ProcessInfo.processInfo.environment["VAULT_TEST_KNOWN_HOSTS"] { sshArgs = ["-o", "UserKnownHostsFile=" + file] + sshArgs }
+    #endif
     var env = cleanEnvironment(path: nil)
 
     switch server.auth {

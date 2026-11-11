@@ -99,11 +99,23 @@ Nothing runs until you read and approve it. The review screen flags risky lines,
 
 ## Using it with your AI
 
-Once it's set up, just talk normally:
+Once it's set up, just talk normally. Some prompts to start with:
 
-- "Deploy this project."
-- "Check why the queue is stuck on the server."
-- "Is the latest migration on production?"
+| You want to | Say |
+| --- | --- |
+| Set it up | "Install the VaultDoor skill from github.com/Avnsh1111/vaultdoor and set it up for me." |
+| See what the AI can use here | "What can you use in this project through VaultDoor?" |
+| Deploy | "Deploy this project." |
+| Try a deploy safely | "Do a dry run of the deploy first." |
+| Get a deploy script | "Set up auto deployment for this project." |
+| Investigate | "Emails stopped going out. Check the logs on the server." |
+| Check a release | "Is the latest commit live on production?" |
+| Run a task | "Run the database migrations on production." |
+| Check the server | "How much disk space is left on the server?" |
+| Call an API | "How many orders came in today? Use the API token." |
+| Move old secrets | "Help me move my .deploy file into the vault." |
+
+The AI runs these through `vaultdoor status`, `vaultdoor run`, `vaultdoor ssh` and `vaultdoor http`, so it gets results with secrets removed. Anything that changes access, such as adding a key, mapping a server or approving a script, stays with you in the dashboard.
 
 If something is missing, the AI says exactly what to do in the dashboard, for example: "Please map the Production server to this project with the folder `/var/www/app`."
 
@@ -165,6 +177,7 @@ scripts/build.sh --test     # the test build
 tests/run.sh                # leak and tamper attacks, plus the real dashboard window
 tests/setup_test.sh         # install, upgrade and uninstall, in throwaway home folders
 tests/hardening.sh          # the real macOS protections, with a throwaway Keychain item
+tests/ssh_e2e.sh            # real ssh and sshpass against a throwaway sshd on 127.0.0.1
 tests/lockdown.sh           # attacks the AI's limits with a real AI run, which uses some AI usage
 ```
 
