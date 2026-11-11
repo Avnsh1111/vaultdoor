@@ -72,6 +72,8 @@ struct PublicState: Encodable {
     let suggested: [PublicSuggestion]
     let unlocked: Bool
     let appsLoading: Bool
+    /// Password logins need it, so the add server form can say so up front.
+    let sshpass: Bool
 }
 
 /// Project folders that hold a .deploy file and are not in the vault yet.
@@ -122,7 +124,7 @@ func publicState(_ data: VaultData, unlocked: Bool, appsLoading: Bool) -> Public
     }
     return PublicState(
         projects: projects, servers: servers, keys: keys, apps: AppCache.load(), activity: Activity.recent(30),
-        suggested: suggestedProjects(data), unlocked: unlocked, appsLoading: appsLoading)
+        suggested: suggestedProjects(data), unlocked: unlocked, appsLoading: appsLoading, sshpass: sshpassPath() != nil)
 }
 
 func encodeJSON<T: Encodable>(_ value: T) -> String {

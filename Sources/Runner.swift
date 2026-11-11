@@ -14,6 +14,8 @@ struct Launch {
     /// Delivered on file descriptor 3, so it never shows in arguments or the environment.
     var fd3: Data?
     var stdinData: Data?
+    /// Stops the program after this many seconds, for checks that must not hang.
+    var timeLimit: TimeInterval?
 }
 
 func exitCode(fromWaitStatus status: Int32) -> Int32 {
@@ -37,10 +39,10 @@ private func writeAll(_ fd: Int32, _ data: Data) {
     }
 }
 
-private func pump(from fd: Int32, to target: Int32, secrets: [(name: String, value: String)], group: DispatchGroup) {
+private func pump(from fd: Int32, secrets: [(name: String, value: String)], group: DispatchGroup, emit: @escaping (Data) -> Void) {
     group.enter()
     Thread.detachNewThread {
-        let redactor = Redactor(secrets: secrets) { writeAll(target, $0) }
+        let redactor = Redactor(secrets: secrets, sink: emit)
         var buffer = [UInt8](repeating: 0, count: 65536)
         var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
         while true {
@@ -60,11 +62,15 @@ private func pump(from fd: Int32, to target: Int32, secrets: [(name: String, val
     }
 }
 
-/// Runs a program and passes its output through the redactor.
-func launchRedacted(_ launch: Launch, secrets: [(name: String, value: String)]) throws -> Int32 {
+/// Runs a program and passes its output through the redactor. With `output`, the
+/// redacted output goes there instead of to this process's stdout and stderr, and
+/// this process's signal handling is left alone, so the dashboard can use it.
+func launchRedacted(_ launch: Launch, secrets: [(name: String, value: String)], output: ((Data) -> Void)? = nil) throws -> Int32 {
     signal(SIGPIPE, SIG_IGN)
-    signal(SIGINT, forwardSignal)
-    signal(SIGTERM, forwardSignal)
+    if output == nil {
+        signal(SIGINT, forwardSignal)
+        signal(SIGTERM, forwardSignal)
+    }
 
     var outPipe: [Int32] = [0, 0]
     var errPipe: [Int32] = [0, 0]
@@ -111,7 +117,13 @@ func launchRedacted(_ launch: Launch, secrets: [(name: String, value: String)]) 
         close(errPipe[0])
         throw VaultError("Could not start \(launch.path): \(String(cString: strerror(spawned))).")
     }
-    childPID = pid
+    if output == nil { childPID = pid }
+    var watchdog: DispatchWorkItem?
+    if let limit = launch.timeLimit {
+        let stop = DispatchWorkItem { kill(pid, SIGTERM) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + limit, execute: stop)
+        watchdog = stop
+    }
 
     if let data = launch.fd3 {
         writeAll(fd3Pipe[1], data)
@@ -123,12 +135,22 @@ func launchRedacted(_ launch: Launch, secrets: [(name: String, value: String)]) 
     }
 
     let group = DispatchGroup()
-    pump(from: outPipe[0], to: 1, secrets: secrets, group: group)
-    pump(from: errPipe[0], to: 2, secrets: secrets, group: group)
+    let lock = NSLock()
+    func sink(_ fd: Int32) -> (Data) -> Void {
+        guard let output else { return { writeAll(fd, $0) } }
+        return { data in
+            lock.lock()
+            output(data)
+            lock.unlock()
+        }
+    }
+    pump(from: outPipe[0], secrets: secrets, group: group, emit: sink(1))
+    pump(from: errPipe[0], secrets: secrets, group: group, emit: sink(2))
 
     var status: Int32 = 0
     while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
-    childPID = 0
+    watchdog?.cancel()
+    if output == nil { childPID = 0 }
     // A background grandchild may keep the pipes open; do not wait on it forever.
     _ = group.wait(timeout: .now() + 3)
     return exitCode(fromWaitStatus: status)
@@ -357,34 +379,124 @@ func runSSH(_ server: Server, link: ServerLink, project: Project, data: VaultDat
         throw VaultError("Refused: \(server.name) has no host. Ask the user to set it in the dashboard.")
     }
     guard !command.isEmpty else { throw VaultError("Give the remote command after --. Interactive sessions are not supported.") }
+    return try sshWithLogin(
+        server, remote: remoteCommand(path: link.path, command: command, enter: enterFolder),
+        options: ["-o", "ConnectTimeout=15"], hide: redactionList(for: project, in: data))
+}
+
+func sshpassPath() -> String? {
+    toolPath("sshpass", candidates: ["/opt/homebrew/bin/sshpass", "/usr/local/bin/sshpass"]).flatMap {
+        FileManager.default.isExecutableFile(atPath: $0) ? $0 : nil
+    }
+}
+
+/// One ssh run with the server's stored login, shared by AI commands and the login check.
+private func sshWithLogin(
+    _ server: Server, remote: [String], options: [String], hide: [(name: String, value: String)],
+    timeLimit: TimeInterval? = nil, output: ((Data) -> Void)? = nil
+) throws -> Int32 {
     guard let ssh = toolPath("ssh", candidates: ["/usr/bin/ssh"]) else { throw VaultError("ssh was not found.") }
-    var sshArgs = ["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=15", "-p", String(server.port ?? 22)]
-    let remote = remoteCommand(path: link.path, command: command, enter: enterFolder)
+    var sshArgs = ["-o", "StrictHostKeyChecking=accept-new"] + options + ["-p", String(server.port ?? 22)]
     var env = cleanEnvironment(path: nil)
-    let hide = redactionList(for: project, in: data)
 
     switch server.auth {
     case "password":
         guard let secret = server.secret else { throw VaultError("Refused: \(server.name) has no password stored.") }
-        guard let sshpass = toolPath("sshpass", candidates: ["/opt/homebrew/bin/sshpass", "/usr/local/bin/sshpass"]) else {
+        guard let sshpass = sshpassPath() else {
             throw VaultError("sshpass is not installed. Ask the user to run: brew install sshpass")
         }
         env["SSH_AUTH_SOCK"] = nil
         sshArgs += ["-o", "PubkeyAuthentication=no", server.target] + remote
         return try launchRedacted(
-            Launch(path: sshpass, args: ["-d", "3", ssh] + sshArgs, env: env, fd3: Data((secret + "\n").utf8)), secrets: hide)
+            Launch(path: sshpass, args: ["-d", "3", ssh] + sshArgs, env: env, fd3: Data((secret + "\n").utf8), timeLimit: timeLimit),
+            secrets: hide, output: output)
     case "key":
         guard let secret = server.secret else { throw VaultError("Refused: \(server.name) has no key stored.") }
         env["SSH_AUTH_SOCK"] = nil
         return try withPrivateAgent(keys: [secret], env: env, hide: hide) { socket in
             sshArgs += ["-o", "IdentityAgent=" + (socket ?? ""), "-o", "PasswordAuthentication=no", server.target] + remote
-            return try launchRedacted(Launch(path: ssh, args: sshArgs, env: env), secrets: hide)
+            return try launchRedacted(Launch(path: ssh, args: sshArgs, env: env, timeLimit: timeLimit), secrets: hide, output: output)
         }
     default:
         // This Mac's own SSH setup. BatchMode so it fails instead of waiting on a prompt.
         sshArgs += ["-o", "BatchMode=yes", server.target] + remote
-        return try launchRedacted(Launch(path: ssh, args: sshArgs, env: env), secrets: hide)
+        return try launchRedacted(Launch(path: ssh, args: sshArgs, env: env, timeLimit: timeLimit), secrets: hide, output: output)
     }
+}
+
+/// What the dashboard shows after logging in to a server once.
+struct LoginCheck: Encodable {
+    let ok: Bool
+    /// ok, login, host, refused, timeout, hostkey, tool or other.
+    let reason: String
+    let message: String
+}
+
+private func loginCheckLimit() -> TimeInterval {
+    #if VAULT_TEST
+    if let value = ProcessInfo.processInfo.environment["VAULT_TEST_CHECK_LIMIT"].flatMap(TimeInterval.init) { return value }
+    #endif
+    return 20
+}
+
+/// Logs in with the stored login and runs `true`, so a wrong password shows up
+/// when it is entered, not the first time the AI needs the server.
+func checkLogin(_ server: Server) -> LoginCheck {
+    if server.auth == "password" && sshpassPath() == nil {
+        return LoginCheck(ok: false, reason: "tool", message: "Password logins need sshpass, which isn't installed. In Terminal, run: brew install sshpass")
+    }
+    let hide = server.secret.map { [(name: server.name, value: $0)] } ?? []
+    let lock = NSLock()
+    var collected = Data()
+    let limit = loginCheckLimit()
+    let started = Date()
+    let code: Int32
+    do {
+        code = try sshWithLogin(
+            server, remote: ["true"], options: ["-o", "ConnectTimeout=8", "-o", "NumberOfPasswordPrompts=1"], hide: hide,
+            timeLimit: limit,
+            output: { data in
+                lock.lock()
+                collected.append(data)
+                lock.unlock()
+            })
+    } catch {
+        return LoginCheck(ok: false, reason: "other", message: "\(error)")
+    }
+    lock.lock()
+    let text = String(decoding: collected, as: UTF8.self)
+    lock.unlock()
+    return describeLogin(server, exit: code, output: text, stopped: Date().timeIntervalSince(started) >= limit)
+}
+
+/// Turns ssh's exit code and error text into one plain sentence.
+func describeLogin(_ server: Server, exit code: Int32, output: String, stopped: Bool) -> LoginCheck {
+    let text = output.lowercased()
+    let host = server.host
+    let port = server.port ?? 22
+    func failed(_ reason: String, _ message: String) -> LoginCheck { LoginCheck(ok: false, reason: reason, message: message) }
+    if code == 0 { return LoginCheck(ok: true, reason: "ok", message: "Logged in to \(server.name).") }
+    if stopped {
+        return failed("timeout", "\(server.name) didn't finish the login in time. It may be asking for something this check can't answer, such as a one-time code.")
+    }
+    if text.contains("remote host identification has changed") || text.contains("host key verification failed") {
+        return failed("hostkey", "\(host) doesn't match the server this Mac connected to before. If it wasn't rebuilt or moved, don't use it until you know why.")
+    }
+    if text.contains("permission denied") || (server.auth == "password" && code == 5) {
+        let what = ["password": "the password", "key": "the key"][server.auth] ?? "this Mac's SSH setup"
+        return failed("login", "\(server.name) turned down the login. Check the user name and \(what).")
+    }
+    if text.contains("could not resolve hostname") || text.contains("name or service not known") {
+        return failed("host", "Can't find \(host). Check the address.")
+    }
+    if text.contains("connection refused") {
+        return failed("refused", "\(host) refused the connection on port \(port). Check the port, and that SSH runs there.")
+    }
+    if text.contains("timed out") || text.contains("no route to host") || text.contains("network is unreachable") {
+        return failed("timeout", "\(host) didn't answer on port \(port). Check the address and port, and any VPN or firewall.")
+    }
+    let last = output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty }
+    return failed("other", "Couldn't log in to \(server.name): \(String((last ?? "exit code \(code)").prefix(200)))")
 }
 
 func hostAllowed(_ host: String, _ allowed: [String]) -> Bool {

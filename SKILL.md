@@ -100,10 +100,11 @@ To open the dashboard for the user, run `vaultdoor dashboard`, then say exactly 
 
 | They want to | Tell them |
 | --- | --- |
-| Add a server login | Click **+ Add server** on the main screen, fill in the address, then type the password in the secure box or choose a key file |
+| Add a server login | Click **+ Add server** on the main screen, fill in the address, then type the password in the secure box or choose a key file. VaultDoor logs in once to check it and shows the result |
+| Find out why a server login fails | **Settings > Servers > Test login** says what went wrong, such as a wrong password, an unknown address or a closed port. Then **Replace login** or **Edit** to fix it |
 | Add another password or token | Click **+ Add key** |
 | Change a saved password | **Settings > Servers > Replace login**, or **Settings > Keys > Replace** |
-| Point a project at a server | Click the server's hexagon and enter the folder |
+| Point a project at a server | Click the server's hexagon, or **Settings > Servers > Map to**, and enter the folder |
 | Get a deploy script | Click **Auto deploy**. The AI writes it with no access to the vault, and it can't run until they read and approve it |
 | Move to a new Mac | **Settings > New Mac > Export**, then Import on the new Mac |
 

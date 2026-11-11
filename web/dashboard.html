@@ -189,6 +189,11 @@
   .pill.ok { color:var(--ok); } .pill.warn { color:var(--warn); } .pill.bad { color:var(--bad); }
   .note { color:var(--mut); font-size:13px; line-height:1.55; margin-bottom:14px; }
   .note b { color:var(--txt); }
+  .note.warn-note { color:var(--warn); }
+  .login-line { display:flex; align-items:center; gap:8px; }
+  .row small.login-line { display:flex; white-space:normal; color:var(--txt); margin-top:5px; }
+  .row.stack { flex-wrap:wrap; }
+  .row.stack .ops { width:100%; flex-wrap:wrap; }
   .sect { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--mut); margin:16px 0 10px; }
 
   #modal { position:fixed; left:50%; top:50%; width:min(460px,92vw); max-height:86vh; overflow:auto; z-index:21; background:#141934; border:1px solid var(--line); border-radius:16px; padding:20px; transform:translate(-50%,-46%) scale(.96); opacity:0; pointer-events:none; transition:transform .25s cubic-bezier(.3,1.3,.5,1), opacity .2s; box-shadow:0 30px 70px -20px #000; }
@@ -507,8 +512,11 @@ function drawDrawer(){
   document.getElementById('dbody').innerHTML={servers:drawServers,keys:drawKeys,actions:drawActions,apps:drawApps,project:drawProject,transfer:drawTransfer}[tab]();
 }
 function drawServers(){
-  const rows=S.servers.map(s=>`<div class="row"><div class="grow"><b>${esc(s.name)}</b><small>${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}</small><small>${s.usedBy.length?esc(s.usedBy.map(u=>u.project+' ('+(u.path||'login folder')+')').join(', ')):'Not mapped to any project'}</small></div><div class="ops"><button class="btn quiet small" data-do="editServer" data-id="${esc(s.id)}">Edit</button>${s.auth==='system'?'':`<button class="btn quiet small" data-do="replaceLogin" data-id="${esc(s.id)}">Replace login</button>`}<button class="btn danger small" data-do="deleteServer" data-id="${esc(s.id)}">Delete</button></div></div>`).join('');
-  return `<p class="note">A server holds its address and login. Map it to a project and a folder from the main screen by clicking its hexagon. <b>Logins are write-only.</b></p><button class="btn" data-do="newServer" style="margin-bottom:14px">Add server</button>${rows||'<p class="note">No servers yet.</p>'}`;
+  const p=rawProj();
+  const rows=S.servers.map(s=>{
+    const mapHere=p&&!p.links.some(l=>l.serverID===s.id)?`<button class="btn small" data-do="openLink" data-id="${esc(s.id)}">Map to ${esc(p.name)}</button>`:'';
+    return `<div class="row stack"><div class="grow"><b>${esc(s.name)}</b><small>${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}</small><small>${s.usedBy.length?esc(s.usedBy.map(u=>u.project+' ('+(u.path||'login folder')+')').join(', ')):'Not mapped to any project'}</small>${checkLine(s.id)}</div><div class="ops">${mapHere}<button class="btn quiet small" data-do="testServer" data-id="${esc(s.id)}">Test login</button><button class="btn quiet small" data-do="editServer" data-id="${esc(s.id)}">Edit</button>${s.auth==='system'?'':`<button class="btn quiet small" data-do="replaceLogin" data-id="${esc(s.id)}">Replace login</button>`}<button class="btn danger small" data-do="deleteServer" data-id="${esc(s.id)}">Delete</button></div></div>`}).join('');
+  return `<p class="note">A server holds its address and login. Map it to a project and a folder here, or by clicking its hexagon on the main screen. <b>Logins are write-only.</b></p><button class="btn" data-do="newServer" style="margin-bottom:14px">Add server</button>${rows||'<p class="note">No servers yet.</p>'}`;
 }
 function drawKeys(){
   const rows=S.keys.map(k=>`<div class="row"><div class="grow"><b>${esc(k.name)}</b><small>${esc(KIND[k.kind]||k.kind)} · ${esc(k.env)}${k.allowedHosts?' · '+esc(k.allowedHosts.join(', ')):''}</small><small>${k.usedBy.length?'Used by '+esc(k.usedBy.join(', ')):'Not used by any project'}</small></div><div class="ops"><button class="btn quiet small" data-do="editKey" data-id="${esc(k.id)}">Edit</button><button class="btn quiet small" data-do="replaceKey" data-id="${esc(k.id)}">Replace</button><button class="btn danger small" data-do="deleteKey" data-id="${esc(k.id)}">Delete</button></div></div>`).join('');
@@ -526,11 +534,12 @@ function drawApps(){
 function drawProject(){
   const p=rawProj();if(!p)return '<p class="note">No project selected.</p>';
   const sugs=S.suggested.map(s=>`<button class="btn quiet small" data-suggest="${esc(s.path)}" data-do="addSuggested" data-id="${esc(s.path)}">${esc(s.name)}</button>`).join(' ');
+  const unmapped=S.servers.filter(s=>!p.links.some(l=>l.serverID===s.id)).map(s=>`<button class="btn quiet small" data-do="openLink" data-id="${esc(s.id)}">Map ${esc(s.name)}</button>`).join('');
   const maps=p.links.map(l=>{const s=S.servers.find(x=>x.id===l.serverID);return `<div class="row"><div class="grow"><b>${esc(l.label)}</b><small>${esc(s?targetOf(s):'Missing server')} · ${esc(l.path||'login folder')}</small></div><div class="ops"><button class="btn quiet small" data-do="openLink" data-id="${esc(l.serverID)}">Edit</button></div></div>`}).join('');
-  return `<div class="row"><div class="grow"><b>${esc(p.name)}</b><small>${esc(p.path)}</small></div><div class="ops"><button class="btn quiet small" data-do="repath">Change folder</button><button class="btn danger small" data-do="removeProject">Remove</button></div></div><div class="sect">Mapped servers</div>${maps||'<p class="note">None yet. Click a server on the main screen to map it.</p>'}${sugs?`<div class="sect">Other folders with a .deploy file</div><div style="display:flex;flex-wrap:wrap;gap:6px">${sugs}</div>`:''}<div class="sect">Recent activity</div>${S.activity.slice().reverse().filter(a=>a.detail==='finished').slice(0,10).map(a=>`<div class="row"><div class="grow"><b>${esc(a.itemName)}</b><small>${esc(a.kind)} · ${esc(new Date(a.time).toLocaleString())}</small></div><span class="pill ${a.exit===0?'ok':'bad'}">exit ${esc(a.exit)}</span></div>`).join('')||'<p class="note">Nothing yet.</p>'}`;
+  return `<div class="row"><div class="grow"><b>${esc(p.name)}</b><small>${esc(p.path)}</small></div><div class="ops"><button class="btn quiet small" data-do="repath">Change folder</button><button class="btn danger small" data-do="removeProject">Remove</button></div></div><div class="sect">Mapped servers</div>${maps||'<p class="note">None yet.</p>'}${unmapped?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${unmapped}</div>`:''}${sugs?`<div class="sect">Other folders with a .deploy file</div><div style="display:flex;flex-wrap:wrap;gap:6px">${sugs}</div>`:''}<div class="sect">Recent activity</div>${S.activity.slice().reverse().filter(a=>a.detail==='finished').slice(0,10).map(a=>`<div class="row"><div class="grow"><b>${esc(a.itemName)}</b><small>${esc(a.kind)} · ${esc(new Date(a.time).toLocaleString())}</small></div><span class="pill ${a.exit===0?'ok':'bad'}">exit ${esc(a.exit)}</span></div>`).join('')||'<p class="note">Nothing yet.</p>'}`;
 }
 function drawTransfer(){
-  return `<p class="note">Export makes one encrypted file protected by a passphrase you choose. Copy it to the new Mac, install Vault there, and import it. <b>Without the passphrase the file cannot be opened.</b></p><div style="display:flex;gap:8px"><button class="btn" data-do="export">Export</button><button class="btn quiet" data-do="import">Import</button></div>`;
+  return `<p class="note">Export makes one encrypted file protected by a passphrase you choose. Copy it to the new Mac, install VaultDoor there, and import it. <b>Without the passphrase the file cannot be opened.</b></p><div style="display:flex;gap:8px"><button class="btn" data-do="export">Export</button><button class="btn quiet" data-do="import">Import</button></div>`;
 }
 function openModal(html,wide=false,view=''){modal.innerHTML=html;modal.dataset.view=view;modal.classList.toggle('wide',wide);modal.classList.add('show');mscrim.classList.add('show');const f=modal.querySelector('textarea,input,select');if(f)f.focus()}
 function closeModal(){modal.classList.remove('show');mscrim.classList.remove('show');modal.dataset.view=''}
@@ -615,9 +624,29 @@ function openServerModal(existing){
     <label class="f">User<input id="f-user" value="${esc(s.user||'')}" placeholder="root"></label>
     <label class="f">Port<input id="f-port" value="${esc(s.port||22)}"></label>
     <label class="f">Login<select id="f-auth">${Object.entries(AUTH).map(([v,l])=>`<option value="${v}" ${v===s.auth?'selected':''}>${l}</option>`).join('')}</select></label>
-    <p class="note">${existing?'Changing the login type asks for the new login.':'Next you enter the login in a secure macOS box. It never passes through this page.'}</p>
+    <p class="note warn-note" id="f-authnote"></p>
+    <p class="note">${existing?'Changing the login type asks for the new login.':'Next you enter the login in a secure macOS box. It never passes through this page. Then VaultDoor logs in once to check it.'}</p>
     <div class="mfoot"><button class="btn quiet" data-do="closeModal">Cancel</button><button class="btn" data-do="${existing?'saveServerEdit':'saveServer'}" data-id="${esc(s.id||'')}">${existing?'Save':'Continue'}</button></div>`);
+  const auth=modal.querySelector('#f-auth'),note=modal.querySelector('#f-authnote');
+  const warn=()=>{const missing=auth.value==='password'&&!S.sshpass;note.textContent=missing?"Password logins need sshpass, which isn't installed on this Mac. In Terminal, run: brew install sshpass":'';note.style.display=missing?'':'none'};
+  auth.addEventListener('change',warn);warn();
 }
+/* ---------- login checks: one ssh login with the saved login, results kept per server ---------- */
+const checks={};
+function checkHTML(id){
+  const c=checks[id];if(!c)return '';
+  if(c.busy)return `<span class="pill">Checking</span><span>Logging in with the saved login…</span>`;
+  return `<span class="pill ${c.ok?'ok':'bad'}">${c.ok?'Login works':'Login failed'}</span><span>${esc(c.message)}</span>`;
+}
+function paintCheck(id){for(const el of document.querySelectorAll('[data-check]'))if(el.dataset.check===id){el.innerHTML=checkHTML(id);el.style.display=checks[id]?'':'none'}}
+async function testLogin(id,{announce=false}={}){
+  checks[id]={busy:true};paintCheck(id);
+  const r=await call('testServer',{id});
+  checks[id]=r.check?{ok:r.check.ok,message:r.check.message}:{ok:false,message:r.error||'The check could not run.'};
+  paintCheck(id);
+  if(announce)toast(checks[id].message,checks[id].ok?'#2fd27c':'#ff5a5f');
+}
+const checkLine=(id,tag='small')=>`<${tag} class="login-line${tag==='p'?' note':''}" ${tag==='p'?'id="login-check" ':''}data-check="${esc(id)}" style="${checks[id]?'':'display:none'}">${checkHTML(id)}</${tag}>`;
 const serverArgs=()=>({name:fval('sname'),host:fval('host'),user:fval('user'),port:fval('port'),auth:fval('auth')});
 const VAR_FIELDS={target:'user@host',host:'Host',user:'User',port:'Port',path:'Folder',password:'Password',key:'Private key file'};
 function linkForm(serverId,link,env){
@@ -637,7 +666,7 @@ async function openLinkModal(serverId,linkId){
   const showForm=linkId==='new'||editing||!links.length;
   const r=await call('suggestEnv',{project:cur,prefix:'DEPLOY'});
   const env=editing?editing.env:(r.env||{});
-  const head=`<h3>${esc(s.name)} in ${esc(proj().name)}</h3><p class="note">${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}. AI commands on this server start in the folder you set here.</p>`;
+  const head=`<h3>${esc(s.name)} in ${esc(proj().name)}</h3><p class="note">${esc(targetOf(s))} · ${esc(AUTH[s.auth]||s.auth)}. AI commands on this server start in the folder you set here. <button class="btn quiet small" data-do="testServer" data-id="${esc(s.id)}">Test login</button></p>${checkLine(s.id,'p')}`;
   const list=links.length>1||(links.length===1&&!editing)?links.map(l=>`<div class="row"><div class="grow"><b>${esc(l.label)}</b><small>${esc(l.path||'login folder')}</small></div><div class="ops"><button class="btn quiet small" data-do="editLink" data-id="${esc(l.id)}" data-server="${esc(serverId)}">Edit</button><button class="btn danger small" data-do="removeLink" data-id="${esc(l.id)}">Remove</button></div></div>`).join(''):'';
   const extra=editing?`<div style="display:flex;justify-content:space-between;margin-bottom:12px"><button class="btn quiet small" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button><button class="btn danger small" data-do="removeLink" data-id="${esc(editing.id)}">Remove mapping</button></div>`:'';
   openModal(head+list+(showForm&&!(links.length>1&&!editing&&linkId!=='new')?extra+linkForm(serverId,editing,env):`<div class="mfoot"><button class="btn quiet" data-do="closeModal">Close</button><button class="btn" data-do="editLink" data-id="new" data-server="${esc(serverId)}">Add another folder</button></div>`));
@@ -659,9 +688,10 @@ async function doAction(el){
     case 'approveGen':{const ok=afterCall(await call('addAction',{project:el.dataset.project,name:fval('gname'),script:el.dataset.script}));if(ok){setAutoChip(await call('generatorStatus'));closeModal();toast('Approved. The AI can now run it with vaultdoor run '+(fval('gname')||''))}return}
     case 'newServer':return openServerModal();
     case 'editServer':return openServerModal(S.servers.find(s=>s.id===id));
-    case 'saveServer':{const r=await call('addServer',serverArgs());if(afterCall(r)){closeModal();if(r.created&&cur){closeDrawer();openLinkModal(r.created)}}return}
-    case 'saveServerEdit':{const ok=await run('updateServer',{...serverArgs(),id});if(ok)closeModal();return}
-    case 'replaceLogin':return run('replaceLogin',{id});
+    case 'saveServer':{const r=await call('addServer',serverArgs());if(afterCall(r)){closeModal();if(r.created&&cur){closeDrawer();testLogin(r.created);openLinkModal(r.created)}else if(r.created)testLogin(r.created,{announce:true})}return}
+    case 'saveServerEdit':{const ok=await run('updateServer',{...serverArgs(),id});if(ok){closeModal();testLogin(id,{announce:true})}return}
+    case 'replaceLogin':{const ok=await run('replaceLogin',{id});if(ok)testLogin(id,{announce:true});return}
+    case 'testServer':return testLogin(id);
     case 'deleteServer':return run('deleteServer',{id});
     case 'openLink':closeDrawer();return openLinkModal(id);
     case 'editLink':return openLinkModal(el.dataset.server,id);
@@ -710,7 +740,7 @@ setInterval(poll,2500);
 const preview={projects:[{id:'p1',name:'shop',path:'/projects/shop',keyIDs:['k3'],links:[{id:'l1',serverID:'s1',label:'main',path:'/var/www/api',env:{target:'DEPLOY_SSH',path:'DEPLOY_PATH',password:'DEPLOY_SSH_PASSWORD'}},{id:'l2',serverID:'s1',label:'web',path:'/var/www/web',env:{path:'DEPLOY_WEB_PATH'}}],disabledApps:['whatsapp'],actions:[{name:'deploy',script:'scripts/deploy.sh',changed:[]}],hasDeploy:true},{id:'p2',name:'blog',path:'/projects/blog',keyIDs:[],links:[{id:'l3',serverID:'s2',label:'web',path:'/var/www/blog',env:{host:'WEB_HOST'}}],disabledApps:[],actions:[{name:'deploy',script:'deploy.sh',changed:['deploy.sh']}],hasDeploy:false}],
   servers:[{id:'s1',name:'Production',host:'example.test',user:'deploy',port:22,auth:'password',hasLogin:true,usedBy:[{project:'shop',label:'main',path:'/var/www/api'},{project:'shop',label:'web',path:'/var/www/web'}]},{id:'s2',name:'Web box',host:'web.example.test',user:'root',port:2222,auth:'system',hasLogin:false,usedBy:[{project:'blog',label:'web',path:'/var/www/blog'}]},{id:'s3',name:'Staging',host:'staging.example.test',user:'ubuntu',port:22,auth:'key',hasLogin:true,usedBy:[]}],
   keys:[{id:'k3',name:'Database owner',env:'DB_OWNER_PASSWORD',kind:'password',usedBy:['shop']},{id:'k4',name:'API token',env:'API_TOKEN',kind:'token',allowedHosts:['api.example.test'],usedBy:[]}],
-  apps:[{id:'gmail',name:'Gmail',status:'connected'},{id:'jira',name:'Jira',status:'connected'},{id:'slack',name:'Slack',status:'needs-auth'},{id:'github',name:'GitHub',status:'failed'},{id:'whatsapp',name:'WhatsApp',status:'connected'}],activity:[],suggested:[],unlocked:false,appsLoading:false};
+  apps:[{id:'gmail',name:'Gmail',status:'connected'},{id:'jira',name:'Jira',status:'connected'},{id:'slack',name:'Slack',status:'needs-auth'},{id:'github',name:'GitHub',status:'failed'},{id:'whatsapp',name:'WhatsApp',status:'connected'}],activity:[],suggested:[],unlocked:false,appsLoading:false,sshpass:true};
 let previewGen=null;
 async function previewCall(op,a){
   if(op==='activity')return JSON.stringify({activity:[]});
@@ -728,6 +758,9 @@ async function previewCall(op,a){
   if(op==='suggestEnv')return JSON.stringify({env:{target:(a.prefix||'DEPLOY')+'_SSH',path:(a.prefix||'DEPLOY')+'_PATH',password:(a.prefix||'DEPLOY')+'_PASSWORD'}});
   if(op==='saveLink'){const p=preview.projects.find(x=>x.id===a.project);const l={id:a.id||('l'+Date.now()),serverID:a.server,label:a.label,path:a.path,env:a.env};const i=p.links.findIndex(x=>x.id===a.id);i>=0?p.links[i]=l:p.links.push(l)}
   if(op==='removeLink'){const p=preview.projects.find(x=>x.id===a.project);p.links=p.links.filter(x=>x.id!==a.id)}
+  if(op==='saveLink'||op==='removeLink')for(const s of preview.servers)s.usedBy=preview.projects.flatMap(p=>p.links.filter(l=>l.serverID===s.id).map(l=>({project:p.name,label:l.label,path:l.path})));
+  if(op==='addServer'){const s={id:'s'+Date.now(),name:a.name||'Server',host:a.host||'',user:a.user||'',port:+a.port||22,auth:a.auth,hasLogin:a.auth!=='system',usedBy:[]};preview.servers.push(s);return JSON.stringify({state:preview,message:s.name+' saved',created:s.id})}
+  if(op==='testServer'){await new Promise(r=>setTimeout(r,1600));const s=preview.servers.find(x=>x.id===a.id);return JSON.stringify({check:{ok:true,reason:'ok',message:'Logged in to '+(s?s.name:'the server')+'.'}})}
   return JSON.stringify({state:preview});
 }
 if(!bridge)document.getElementById('preview').style.display='block';

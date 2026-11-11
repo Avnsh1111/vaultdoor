@@ -598,6 +598,52 @@ has "keeps hyphens in the prefix" "plugin_chrome-devtools-mcp_chrome-devtools|Ch
 has "reports a failed app" "plugin_github_github|Github|failed" "$out"
 has "reports an app needing sign-in" "atlassian-v1|Atlassian V1|needs-auth" "$out"
 
+echo "login check"
+CPW='check-Canary-Pass-42'
+python3 -I - "$T/seed9.json" "$CPW" "$T/testkey" <<'EOS'
+import json, sys
+out, pw, keyfile = sys.argv[1:]
+t = "2026-01-01T00:00:00Z"
+json.dump(dict(version=1, secrets=[], projects=[], servers=[
+    dict(id="c1", name="Pass box", host="pass.test", user="deploy", port=2205, auth="password", secret=pw, updatedAt=t),
+    dict(id="c2", name="Key box", host="key.test", user="ubuntu", auth="key", secret=open(keyfile).read(), updatedAt=t),
+    dict(id="c3", name="Own box", host="own.test", auth="system", updatedAt=t),
+]), open(out, "w"))
+EOS
+export VAULT_TEST_HOME=$T/home9
+"$V" __seed "$T/seed9.json"
+fake() {  # fake <name> <exit code> <stderr line>: answers the way a real ssh or sshpass does
+  local f=$T/fake-$1
+  { echo '#!/bin/bash'; echo "echo \"\$*\" > '$f.args'"; printf 'echo %q >&2\n' "$3"; echo "exit $2"; } > "$f"
+  chmod +x "$f"; echo "$f"
+}
+chk() { "$V" __check-login "$@" 2>&1; }
+out=$(VAULT_TEST_SSHPASS=$(fake pass-ok 0 "") chk c1); has "a working login passes" '"ok":true' "$out"; has "says it logged in" "Logged in to Pass box" "$out"
+args=$(cat "$T/fake-pass-ok.args"); has "the check runs a harmless command" "deploy@pass.test true" "$args"; has "a wrong password is tried once" "NumberOfPasswordPrompts=1" "$args"; has "the check uses the stored port" "-p 2205" "$args"
+out=$(VAULT_TEST_SSHPASS=$(fake login 5 "Permission denied, please try again.") chk c1); has "a wrong password is named" '"reason":"login"' "$out"; has "says the login was turned down" "turned down the login" "$out"
+out=$(VAULT_TEST_SSHPASS=$(fake host 255 "ssh: Could not resolve hostname pass.test: nodename nor servname provided, or not known") chk c1); has "an unknown address is named" '"reason":"host"' "$out"; has "names the address" "pass.test" "$out"
+out=$(VAULT_TEST_SSHPASS=$(fake refused 255 "ssh: connect to host pass.test port 2205: Connection refused") chk c1); has "a refused port is named" '"reason":"refused"' "$out"; has "names the port" "port 2205" "$out"
+out=$(VAULT_TEST_SSHPASS=$(fake slow 255 "ssh: connect to host pass.test port 2205: Operation timed out") chk c1); has "a timeout is named" '"reason":"timeout"' "$out"
+out=$(VAULT_TEST_SSHPASS=$(fake hostkey 255 "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @") chk c1); has "a changed host key is named" '"reason":"hostkey"' "$out"
+printf '#!/bin/bash\nsleep 30\n' > "$T/fake-hang"; chmod +x "$T/fake-hang"
+start=$SECONDS; out=$(VAULT_TEST_CHECK_LIMIT=1 VAULT_TEST_SSHPASS="$T/fake-hang" chk c1)
+has "a server that never answers is a timeout" '"reason":"timeout"' "$out"; (( SECONDS - start < 8 )) && ok "the check gives up on its own" || bad "the check waited $((SECONDS - start))s"
+cat > "$T/fake-echo-pass" <<'EOS'
+#!/bin/bash
+got=$(head -n1 <&3)
+echo "odd failure after sending $got" >&2
+exit 255
+EOS
+chmod +x "$T/fake-echo-pass"
+out=$(VAULT_TEST_SSHPASS="$T/fake-echo-pass" chk c1); has "an unknown failure shows ssh's own words" "odd failure after sending" "$out"; hasnt "the message has no password" "$CPW" "$out"
+out=$(VAULT_TEST_SSHPASS="$T/no-such-sshpass" chk c1); has "missing sshpass is named" '"reason":"tool"' "$out"; has "says how to install it" "brew install sshpass" "$out"
+out=$(VAULT_TEST_SSH=$(fake key-ok 0 "") chk c2); has "a key login passes" '"ok":true' "$out"; has "a key login never falls back to a password" "PasswordAuthentication=no" "$(cat "$T/fake-key-ok.args")"
+out=$(VAULT_TEST_SSH=$(fake own-ok 0 "") chk c3); has "this Mac's setup passes" '"ok":true' "$out"; has "this Mac's setup never waits on a prompt" "BatchMode=yes" "$(cat "$T/fake-own-ok.args")"
+chk nope >/dev/null; code "an unknown server is refused" 1 $?
+out=$(VAULT_TEST_SSHPASS="$T/no-such-sshpass" "$V" __state); has "page knows sshpass is missing" '"sshpass":false' "$out"
+out=$(VAULT_TEST_SSHPASS="$T/fake-pass-ok" "$V" __state); has "page knows sshpass is there" '"sshpass":true' "$out"
+export VAULT_TEST_HOME=$T/home
+
 echo "dashboard window"
 gui=$(mktemp)
 VAULT_TEST_CANARY="$CANARY" "$V" __gui-selftest >"$gui" 2>/dev/null & GPID=$!
@@ -666,7 +712,7 @@ export VAULT_TEST_HOME=$T/home7
 printf '[{"id":"gmail_app","name":"Gmail","status":"connected"},{"id":"slack_app","name":"Slack","status":"needs-auth"}]' > "$T/home7/apps.json"
 printf 'scripts/deploy-auto.sh' > "$T/agent-target"; printf 'clean' > "$T/agent-mode"
 guiout=$(mktemp)
-VAULT_TEST_SECRET="$WSECRET" VAULT_TEST_AGENT="$T/fake-agent" VAULT_TEST_GUI_SCRIPT="$ROOT/tests/gui_bridge.js" "$V" __gui-selftest >"$guiout" 2>/dev/null & GPID=$!
+VAULT_TEST_SSHPASS=$(fake gui-login 5 "Permission denied, please try again.") VAULT_TEST_SECRET="$WSECRET" VAULT_TEST_AGENT="$T/fake-agent" VAULT_TEST_GUI_SCRIPT="$ROOT/tests/gui_bridge.js" "$V" __gui-selftest >"$guiout" 2>/dev/null & GPID=$!
 for _ in $(seq 1 300); do kill -0 "$GPID" 2>/dev/null || break; sleep 0.2; done
 kill "$GPID" 2>/dev/null
 out=$(cat "$guiout"); rm -f "$guiout"

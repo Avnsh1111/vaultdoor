@@ -62,9 +62,9 @@ Everyone gets their own private vault, and nothing you store is ever part of thi
 
 ## How it works
 
-**1. Add your servers and keys.** A server holds its address and login: a password, a private key, or your Mac's own SSH setup. Passwords go into a secure macOS box and never pass through the page or the chat. One login used by five projects stays one server.
+**1. Add your servers and keys.** A server holds its address and login: a password, a private key, or your Mac's own SSH setup. Passwords go into a secure macOS box and never pass through the page or the chat. VaultDoor then logs in once to check it, so a wrong password or address shows up right away, not the first time the AI needs the server. One login used by five projects stays one server.
 
-**2. Map them to projects.** Click a server, enter the folder, and that project can reach it. One server can map to several folders, such as your API and your website. Already have a `.deploy` file? **Move .deploy into the vault** does it all for you.
+**2. Map them to projects.** Click a server, or **Map to** in Settings › Servers, enter the folder, and that project can reach it. One server can map to several folders, such as your API and your website. Already have a `.deploy` file? **Move .deploy into the vault** does it all for you.
 
 ![Connection map](docs/map.png)
 

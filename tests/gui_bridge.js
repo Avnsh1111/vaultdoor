@@ -16,6 +16,20 @@ try {
   const project = () => S.projects.find(p => p.id === 'w1');
   check('the page opens the project', cur === 'w1', cur);
 
+  // Password logins need sshpass: the form says so before anything is saved.
+  S.sshpass = false;
+  await click('[data-add="server"]');
+  const authNote = () => ($('#f-authnote') || {}).textContent || '';
+  check('the form warns when sshpass is missing', authNote().includes('brew install sshpass'), authNote());
+  $('#f-auth').value = 'system'; $('#f-auth').dispatchEvent(new Event('change', { bubbles: true }));
+  await wait(50);
+  check('no sshpass warning for a login that needs none', !authNote().includes('sshpass'), authNote());
+  await click('[data-do="closeModal"]', 150);
+  S.sshpass = true;
+  await click('[data-add="server"]');
+  check('no sshpass warning when it is installed', !authNote().includes('sshpass'), authNote());
+  await click('[data-do="closeModal"]', 150);
+
   // Add a server: the form, then the native box answered by the test build.
   await click('[data-add="server"]');
   check('the add server form opens', !!$('#f-sname'));
@@ -24,6 +38,9 @@ try {
   const staging = S.servers.find(s => s.name === 'Staging');
   check('add server saves it', staging && staging.host === 'staging.test' && staging.port === 2204 && staging.hasLogin, staging);
   check('the mapping form opens next', !!$('#f-path'));
+  const loginLine = () => ($('#login-check') || {}).textContent || '';
+  for (let i = 0; i < 25 && !loginLine().includes('turned down'); i++) await wait(200);
+  check('the new login is checked right away', loginLine().includes('turned down the login'), loginLine());
   check('the typed login never reaches the page', noLeak());
 
   // Map it with a folder, using the variable names from the prefix.
@@ -88,12 +105,21 @@ try {
   // Settings.
   await click('#settings', 300);
   check('settings opens on servers', $('#dtabs .on').textContent === 'Servers' && $('#dbody').innerText.includes('Staging'));
+  const mapButton = $(`#dbody [data-do="openLink"][data-id="${staging.id}"]`);
+  check('an unmapped server offers to map it here', mapButton && mapButton.textContent.includes('winproj'), mapButton && mapButton.textContent);
+  await click(`#dbody [data-do="testServer"][data-id="${staging.id}"]`, 200);
+  for (let i = 0; i < 25 && !$('#dbody').innerText.includes('turned down'); i++) await wait(200);
+  check('test login shows the result in the list', $('#dbody').innerText.includes('turned down the login'), $('#dbody').innerText.slice(0, 300));
   await click('[data-do="editServer"]', 200);
   $('#f-sname').value = 'Staging renamed';
   await click('[data-do="saveServerEdit"]', 500);
   check('editing a server saves it', S.servers.some(s => s.name === 'Staging renamed'));
   await click('[data-do="replaceLogin"]', 500);
+  for (let i = 0; i < 25 && !$('#toast').textContent.includes('turned down'); i++) await wait(200);
+  check('a replaced login is checked right away', $('#toast').textContent.includes('turned down the login'), $('#toast').textContent);
   check('replacing a login keeps the page clean', noLeak());
+  await click('[data-tab="transfer"]', 100);
+  check('the new Mac steps use the app\'s name', $('#dbody').innerText.includes('install VaultDoor there'), $('#dbody').innerText.slice(0, 200));
   await click('[data-tab="actions"]', 100);
   check('the actions tab has the auto deploy button', !!$('[data-do="autoDeploy"]'));
 

@@ -13,6 +13,9 @@ func runTestCommand(_ name: String, _ args: [String]) -> Never {
             try Store.save(try decoder.decode(VaultData.self, from: Data(contentsOf: URL(fileURLWithPath: args[0]))))
         case "__state":
             print(encodeJSON(publicState(try Store.load(), unlocked: false, appsLoading: false)))
+        case "__check-login":
+            guard let server = try Store.load().servers.first(where: { $0.id == args[0] }) else { throw VaultError("No such server.") }
+            print(encodeJSON(checkLogin(server)))
         case "__export":
             FileManager.default.createFile(atPath: args[1], contents: try Store.exportBlob(try Store.load(), passphrase: args[0]))
         case "__import":

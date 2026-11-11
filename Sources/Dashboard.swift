@@ -265,6 +265,7 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
         case "updateServer": updateServer(args, done)
         case "replaceLogin": replaceLogin(args, done)
         case "deleteServer": deleteServer(args, done)
+        case "testServer": testServer(args, done)
         case "suggestEnv": suggestEnv(args, done)
         case "saveLink": saveLink(args, done)
         case "removeLink": removeLink(args, done)
@@ -507,6 +508,24 @@ final class Dashboard: NSObject, NSApplicationDelegate, WKScriptMessageHandlerWi
             data.servers.removeAll { $0.id == id }
             for index in data.projects.indices { data.projects[index].links.removeAll { $0.serverID == id } }
             return "Server deleted"
+        }
+    }
+
+    /// Logs in once with the stored login. No Touch ID: it changes nothing, and the
+    /// AI's own commands use the same login without one. Off the main thread,
+    /// because a slow server can take seconds to answer.
+    private func testServer(_ args: [String: Any], _ done: @escaping Done) {
+        guard let id = text(args, "id") else { return done(errorJSON("No server was given.")) }
+        let found: Server?
+        do {
+            found = try Store.load().servers.first { $0.id == id }
+        } catch {
+            return done(errorJSON("\(error)"))
+        }
+        guard let server = found else { return done(errorJSON("That server is no longer in the vault.")) }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = checkLogin(server)
+            DispatchQueue.main.async { done(encodeJSON(["check": result])) }
         }
     }
 
